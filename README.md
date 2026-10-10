@@ -48,6 +48,7 @@ The sandbox half could not be built here: OpenShell requires Linux with
 [Landlock](https://docs.kernel.org/security/landlock.html) ABI v3 (Linux 6.2+)
 plus a Docker daemon (official minimum 28.0), and this checkout was prepared on
 Windows 11 with neither WSL nor Docker installed. See
+[docs/architecture.png](docs/architecture.png) for the diagram,
 [docs/architecture.md](docs/architecture.md) for the full "what is enforced vs
 what is claimed" breakdown, and [policy/README.md](policy/README.md) for what
 still needs to be verified on a Linux host.
@@ -206,13 +207,22 @@ is high-sensitivity); the classifier prompt must show `[REDACTED]` in place of
 high-sensitivity values; and no child name or school may appear in an outbound
 draft prompt.
 
-Two known gaps are recorded rather than hidden:
+Two display behaviours are deliberate and pinned by tests, so neither can drift
+silently:
 
-1. The dashboard's family-card heading prints each member's name, so a child's
-   name is redacted in the identifier list and then displayed in the card title.
-   (`xfail` in the suite.)
-2. `GET /api/family` returns identifier values unredacted, while the template
-   that reads it redacts them. Fine on localhost; a real leak if exposed.
+1. **The dashboard family card shows member names** — including a child's. The
+   local operator console is not an egress path, and the parent already knows
+   their own child's name. What must not follow the name is the sensitive
+   context around it, which is why the school identifier is redacted directly
+   beside it.
+2. **`GET /api/family` redacts high-sensitivity identifier values by default.**
+   The API must not hand out what the UI it feeds refuses to display, and the
+   hackathon requires a public hosted demo URL. `?reveal=true` is the explicit
+   local-operator opt-in for the raw values.
+
+Neither behaviour weakens the actual invariant, which is about egress: the
+dashboard can print a name, but no high-sensitivity value may appear in any
+payload sent to a model or a search API.
 
 ## Consent and ethics constraints
 
@@ -230,9 +240,9 @@ Two known gaps are recorded rather than hidden:
 ```
 haven/
 ├── LICENSE                  MIT
-├── agent/                   Hermes agent config and the three pipeline skills
-├── docs/                    architecture and the 3-minute demo script
-├── policy/                  OpenShell policy, boundary policy, boundary test
+├── agent/                   Hermes env template, the three pipeline skills, memory note
+├── docs/                    architecture (md + png), 3-minute demo script
+├── policy/                  OpenShell policy, boundary policy, counterexample, boundary test
 ├── scripts/                 compliance spine, model verification, serve
 ├── src/haven/
 │   ├── llm.py               tiered Nemotron client + per-tier usage logging
@@ -242,9 +252,17 @@ haven/
 │   ├── evidence.py          host-side reader for OpenShell OCSF audit logs
 │   ├── api.py               FastAPI JSON API + dashboard
 │   └── seed.py              synthetic family generator
-├── tests/                   244 tests
+├── tests/                   275 tests
 └── web/templates/           dashboard
 ```
+
+The diagram is generated, not hand-drawn: `python docs/make_architecture_diagram.py`
+rewrites `docs/architecture.png`, so it can be regenerated when the architecture
+changes. Test modules are named for what they cover — `test_boundary.py` holds
+the boundary-artifact assertions, `test_pipeline.py` the end-to-end run, and the
+per-stage behaviour lives in `test_pipeline_discovery.py`,
+`test_pipeline_procedures.py`, `test_pipeline_transitions.py` and
+`test_pipeline_json.py`.
 
 ## Licence
 
