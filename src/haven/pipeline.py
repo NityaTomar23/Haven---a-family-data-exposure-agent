@@ -385,7 +385,13 @@ def run_pipeline(
     """Run the full discover → extract → draft pipeline.
 
     Returns a PipelineState ready for the dashboard.
+
+    ``tier_usage`` covers only the calls this run made. The usage log is
+    module-global so that the dashboard's chart can show all activity; taking a
+    slice keeps a second run from reporting the first run's tokens as its own.
     """
+    usage_mark = len(llm.get_usage_log())
+
     # Stage 1: Discover
     exposures = discover_exposures(
         family,
@@ -404,7 +410,7 @@ def run_pipeline(
         exposures=exposures,
         procedures=procedures,
         actions=actions,
-        tier_usage=llm.get_usage_log(),
+        tier_usage=llm.get_usage_log()[usage_mark:],
     )
 
 

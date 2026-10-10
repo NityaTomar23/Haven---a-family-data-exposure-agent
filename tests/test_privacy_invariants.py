@@ -179,29 +179,47 @@ def test_dashboard_marks_redacted_identifiers_explicitly(client):
     assert "[REDACTED" in client.get("/").text
 
 
-@pytest.mark.xfail(
-    reason=(
-        "FamilyMember.first_name/last_name are rendered in the family-card heading, "
-        "so a child's name is redacted in the identifier list and then displayed "
-        "anyway in the card title. Fixing this needs a display policy decision."
-    ),
-    strict=False,
-)
-def test_children_names_are_not_rendered_in_plain_text(client):
-    assert "Sofia Castillo" not in client.get("/").text
+def test_member_names_are_shown_because_the_local_console_is_not_egress(client):
+    """Documented display policy, asserted so it cannot drift silently.
 
-
-def test_family_api_returns_unredacted_identifier_values(client):
-    """Documents a gap, not a requirement.
-
-    The dashboard template redacts high-sensitivity identifier values, but the
-    endpoint it reads from returns them verbatim.  That is fine while the app is
-    a localhost demo and becomes a real problem the moment it is exposed.
+    ``Identifier.sensitivity`` governs *egress*: a high-sensitivity value must
+    never leave for a model or a search API. Rendering a child's name in the
+    operator's own console is not egress, and the parent already knows it. What
+    must not follow the name is the sensitive context around it -- which is why
+    the school identifier is redacted directly beside it.
     """
+    html = client.get("/").text
+
+    assert "Sofia Castillo" in html  # the operator's local view
+    assert "Lincoln Middle School" not in html  # an Identifier value: redacted
+    assert "maria.castillo@example.com" not in html
+
+
+def test_family_api_redacts_high_sensitivity_values_by_default(client):
+    """The API must not hand out what the UI it feeds refuses to display."""
     payload = client.get("/api/family").json()
+    values = {
+        ident["value"] for member in payload["members"] for ident in member["identifiers"]
+    }
+
+    assert "[REDACTED]" in values
+    assert "maria.castillo@example.com" not in values
+    assert "(217) 555-0142" not in values
+    assert "742 Evergreen Terrace" not in values
+    assert "Sofia Castillo" not in values
+    # Low-sensitivity values stay visible: the operator needs them to confirm
+    # which family is loaded.
+    assert "Maria Castillo" in values
+    assert "Springfield, IL" in values
+
+
+def test_family_api_reveal_is_an_explicit_opt_in(client):
+    """The raw view exists for the local operator and must be asked for."""
+    payload = client.get("/api/family?reveal=true").json()
     values = {
         ident["value"] for member in payload["members"] for ident in member["identifiers"]
     }
 
     assert "maria.castillo@example.com" in values
     assert "Sofia Castillo" in values
+    assert "[REDACTED]" not in values

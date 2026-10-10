@@ -32,7 +32,7 @@ from haven.pipeline import (
     mark_sent,
     run_pipeline,
 )
-from haven.seed import generate_family
+from haven.seed import generate_family, redact_high_sensitivity
 
 app = FastAPI(
     title="Haven",
@@ -101,9 +101,17 @@ async def dashboard(request: Request):
 
 
 @app.get("/api/family")
-async def get_family():
-    """Return the current synthetic family."""
-    return _get_state().family
+async def get_family(reveal: bool = False):
+    """Return the current synthetic family.
+
+    High-sensitivity identifier values are redacted by default so the API
+    agrees with the dashboard template that consumes the same data. Pass
+    ``?reveal=true`` for the raw values, which is a local-operator escape
+    hatch: the hosted demo URL is public, and the dashboard labels this
+    distinction on screen.
+    """
+    family = _get_state().family
+    return family if reveal else redact_high_sensitivity(family)
 
 
 @app.post("/api/scan")

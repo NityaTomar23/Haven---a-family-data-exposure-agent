@@ -103,3 +103,23 @@ def get_search_identifiers(family: Family) -> list[Identifier]:
     search, never sent as search queries themselves.
     """
     return [i for i in get_all_identifiers(family) if i.sensitivity == "low"]
+
+
+def redact_high_sensitivity(family: Family) -> Family:
+    """Return a deep copy with every high-sensitivity identifier value hidden.
+
+    The dashboard template already redacts these values, and the JSON API
+    should not hand out what the UI it feeds refuses to show. The hosted demo
+    URL required by the hackathon is public, so the default must be the
+    redacted view even though the seed data is synthetic.
+
+    Only ``Identifier.value`` is touched: a member's name is a display
+    concern, not an identifier, and the local operator console is not an
+    egress path.
+    """
+    clone = family.model_copy(deep=True)
+    for member in clone.members:
+        for identifier in member.identifiers:
+            if identifier.sensitivity == "high":
+                identifier.value = "[REDACTED]"
+    return clone
