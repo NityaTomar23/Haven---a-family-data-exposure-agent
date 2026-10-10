@@ -1,0 +1,73 @@
+# Deliberately over-broad policy, used to prove the Policy Prover discriminates.
+#
+# policy/policy.yaml alone should return `within_boundary`. That only shows the
+# prover ran; it does not show the prover would catch a violation. This file is
+# policy.yaml plus one host that the boundary does not permit
+# (example.com:443), so the check must return `exceeds_boundary` with a
+# counterexample.
+#
+#     openshell-prover check policy/counterexample.yaml --boundary policy/boundary.yaml
+#     # expected: result: exceeds_boundary   (exit code 1)
+
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  read_only: [/usr, /lib, /lib64, /etc, /proc, /dev/urandom, /opt/openshell]
+  read_write: [/sandbox, /tmp, /dev/null]
+
+landlock:
+  compatibility: hard_requirement
+
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+
+network_policies:
+  token_factory:
+    name: token_factory
+    endpoints:
+      - host: api.tokenfactory.us-central1.nebius.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: POST, path: /v1/chat/completions }
+          - allow: { method: GET, path: /v1/models }
+      - host: api.tokenfactory.nebius.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: POST, path: /v1/chat/completions }
+          - allow: { method: GET, path: /v1/models }
+    binaries:
+      - path: /usr/bin/python3.12
+      - path: /usr/local/bin/hermes
+
+  tavily:
+    name: tavily
+    endpoints:
+      - host: api.tavily.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: POST, path: /search }
+          - allow: { method: POST, path: /extract }
+    binaries:
+      - path: /usr/bin/python3.12
+      - path: /usr/local/bin/hermes
+
+  # The planted violation: never allowed by policy/boundary.yaml.
+  smuggled_egress:
+    name: smuggled_egress
+    endpoints:
+      - host: example.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: POST, path: /** }
+    binaries:
+      - path: /usr/bin/python3.12

@@ -1,0 +1,88 @@
+# Hardened variant of policy/policy.yaml: the provable core PLUS an
+# enforcement-layer redaction middleware.
+#
+# WHY THIS IS A SEPARATE FILE
+#
+# The regex middleware is the strongest exfiltration control available in this
+# project: it strips high-sensitivity patterns out of request bodies at the
+# proxy boundary, in the enforcement layer, fail-closed. That is a much
+# stronger claim than "the agent was asked not to send them".
+#
+# But the Policy Prover models five domains only -- filesystem, process,
+# Landlock, network connections (L4), and REST requests. `network_middlewares`
+# is not among them, and the prover reports `unsupported` rather than ignoring
+# rules it cannot model. Since only `within_boundary` counts as a pass,
+# proving *this* file may be impossible, even though it is strictly more
+# restrictive than policy.yaml.
+#
+# So: run this policy in the sandbox, and prove policy.yaml. Report both
+# facts. Do not present the middleware as prover-verified.
+#
+# UNVERIFIED: the OpenShell reference documents `mode: redact` for the
+# openshell/regex middleware but does not publish the pattern configuration,
+# so no pattern list is invented here. Confirm the pattern keys against the
+# openshell/regex middleware reference, and if the installed version rejects
+# this block, remove it rather than shipping a policy that will not load.
+
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  read_only: [/usr, /lib, /lib64, /etc, /proc, /dev/urandom, /opt/openshell]
+  read_write: [/sandbox, /tmp, /dev/null]
+
+landlock:
+  compatibility: hard_requirement
+
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+
+network_policies:
+  token_factory:
+    name: token_factory
+    endpoints:
+      - host: api.tokenfactory.us-central1.nebius.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: POST, path: /v1/chat/completions }
+          - allow: { method: GET, path: /v1/models }
+      - host: api.tokenfactory.nebius.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: POST, path: /v1/chat/completions }
+          - allow: { method: GET, path: /v1/models }
+    binaries:
+      - path: /usr/bin/python3.12
+      - path: /usr/local/bin/hermes
+
+  tavily:
+    name: tavily
+    endpoints:
+      - host: api.tavily.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: POST, path: /search }
+          - allow: { method: POST, path: /extract }
+    binaries:
+      - path: /usr/bin/python3.12
+      - path: /usr/local/bin/hermes
+
+network_middlewares:
+  redact-high-sensitivity:
+    middleware: openshell/regex
+    order: 10
+    on_error: fail_closed
+    config:
+      mode: redact
+    endpoints:
+      include:
+        - api.tokenfactory.us-central1.nebius.com
+        - api.tokenfactory.nebius.com
+        - api.tavily.com
