@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Haven — Family Data-Exposure Agent</title>
+    <meta name="description" content="Haven finds where your family's personal data is publicly exposed and drives the removal.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0f1117;
+            --bg-card: #1a1d27;
+            --bg-card-hover: #22253a;
+            --border: #2a2d3e;
+            --text: #e4e7ec;
+            --text-dim: #8b8fa3;
+            --accent: #6c5ce7;
+            --accent-glow: rgba(108, 92, 231, 0.3);
+            --green: #00d68f;
+            --green-dim: rgba(0, 214, 143, 0.15);
+            --red: #ff6b6b;
+            --red-dim: rgba(255, 107, 107, 0.15);
+            --yellow: #ffd93d;
+            --yellow-dim: rgba(255, 217, 61, 0.15);
+            --blue: #4ecdc4;
+            --blue-dim: rgba(78, 205, 196, 0.15);
+            --radius: 12px;
+            --shadow: 0 4px 24px rgba(0,0,0,0.3);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 0 24px; }
+
+        /* ── Header ─────────────────────────────── */
+        header {
+            border-bottom: 1px solid var(--border);
+            padding: 20px 0;
+            background: linear-gradient(180deg, rgba(108,92,231,0.08) 0%, transparent 100%);
+        }
+        header .container {
+            display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;
+        }
+        .logo {
+            display: flex; align-items: center; gap: 12px;
+            font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em;
+        }
+        .logo-icon {
+            width: 40px; height: 40px; border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent), #a29bfe);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.2rem;
+        }
+        .scan-btn {
+            background: linear-gradient(135deg, var(--accent), #a29bfe);
+            color: white; border: none; padding: 12px 28px;
+            border-radius: 10px; font-size: 0.95rem; font-weight: 600;
+            cursor: pointer; transition: all 0.3s;
+            box-shadow: 0 4px 15px var(--accent-glow);
+        }
+        .scan-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 25px var(--accent-glow); }
+        .scan-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+        /* ── Summary Cards ──────────────────────── */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px; padding: 32px 0 24px;
+        }
+        .summary-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            transition: all 0.3s;
+        }
+        .summary-card:hover { border-color: var(--accent); box-shadow: var(--shadow); }
+        .summary-card .label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); margin-bottom: 8px; }
+        .summary-card .value { font-size: 2.2rem; font-weight: 800; letter-spacing: -0.03em; }
+        .summary-card.exposures .value { color: var(--red); }
+        .summary-card.sent .value { color: var(--yellow); }
+        .summary-card.confirmed .value { color: var(--green); }
+        .summary-card.pending .value { color: var(--blue); }
+
+        /* ── Sections ───────────────────────────── */
+        .section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            margin-bottom: 24px;
+            overflow: hidden;
+        }
+        .section-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; gap: 12px;
+        }
+        .section-header h2 { font-size: 1.1rem; font-weight: 700; }
+        .section-header .badge {
+            font-size: 0.75rem; font-weight: 600;
+            padding: 3px 10px; border-radius: 20px;
+        }
+        .section-body { padding: 24px; }
+
+        /* ── Family Panel ───────────────────────── */
+        .family-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+        .member-card {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+        }
+        .member-card .name { font-weight: 700; font-size: 1rem; margin-bottom: 4px; }
+        .member-card .role {
+            font-size: 0.75rem; text-transform: uppercase;
+            letter-spacing: 0.08em; color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+        .member-card .ids { font-size: 0.82rem; color: var(--text-dim); }
+        .member-card .ids span { display: block; margin: 2px 0; }
+        .id-kind { color: var(--accent); font-weight: 500; }
+        .id-redacted { color: var(--red); font-style: italic; }
+
+        /* ── Exposure Table ──────────────────────── */
+        .exposure-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+        .exposure-table th {
+            text-align: left; padding: 12px 16px;
+            font-size: 0.75rem; text-transform: uppercase;
+            letter-spacing: 0.08em; color: var(--text-dim);
+            border-bottom: 1px solid var(--border);
+        }
+        .exposure-table td { padding: 14px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        .exposure-table tr:last-child td { border-bottom: none; }
+        .exposure-table tr:hover td { background: var(--bg-card-hover); }
+        .confidence-bar {
+            display: inline-block; height: 6px; border-radius: 3px;
+            background: var(--accent); min-width: 20px;
+        }
+        .broker-badge {
+            font-size: 0.72rem; font-weight: 600; padding: 3px 8px;
+            border-radius: 6px; display: inline-block;
+        }
+        .broker-badge.people_search { background: var(--red-dim); color: var(--red); }
+        .broker-badge.data_broker { background: var(--yellow-dim); color: var(--yellow); }
+        .broker-badge.breach_dump { background: rgba(255,107,107,0.25); color: #ff8a8a; }
+        .broker-badge.social { background: var(--blue-dim); color: var(--blue); }
+        .broker-badge.other { background: rgba(139,143,163,0.2); color: var(--text-dim); }
+
+        /* ── Action Cards ───────────────────────── */
+        .action-list { display: flex; flex-direction: column; gap: 16px; }
+        .action-card {
+            background: var(--bg); border: 1px solid var(--border);
+            border-radius: 10px; padding: 20px;
+        }
+        .action-card .action-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
+        }
+        .action-card .site-name { font-weight: 700; font-size: 1rem; }
+        .status-badge {
+            font-size: 0.72rem; font-weight: 600; padding: 4px 12px;
+            border-radius: 20px; text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .status-badge.drafted { background: var(--blue-dim); color: var(--blue); }
+        .status-badge.approved { background: var(--yellow-dim); color: var(--yellow); }
+        .status-badge.sent { background: rgba(108,92,231,0.2); color: #a29bfe; }
+        .status-badge.confirmed_removed { background: var(--green-dim); color: var(--green); }
+        .status-badge.rejected { background: var(--red-dim); color: var(--red); }
+        .status-badge.pending { background: rgba(139,143,163,0.2); color: var(--text-dim); }
+        .draft-content {
+            background: rgba(0,0,0,0.3); border-radius: 8px; padding: 16px;
+            font-size: 0.85rem; line-height: 1.7; white-space: pre-wrap;
+            max-height: 200px; overflow-y: auto; margin-bottom: 12px;
+            border: 1px solid var(--border);
+        }
+        .action-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+        .action-buttons button {
+            padding: 8px 16px; border-radius: 8px; font-size: 0.82rem;
+            font-weight: 600; border: 1px solid var(--border);
+            cursor: pointer; transition: all 0.2s;
+        }
+        .btn-approve { background: var(--green-dim); color: var(--green); border-color: var(--green); }
+        .btn-approve:hover { background: var(--green); color: var(--bg); }
+        .btn-sent { background: var(--yellow-dim); color: var(--yellow); border-color: var(--yellow); }
+        .btn-sent:hover { background: var(--yellow); color: var(--bg); }
+        .btn-confirm { background: var(--accent-glow); color: var(--accent); border-color: var(--accent); }
+        .btn-confirm:hover { background: var(--accent); color: white; }
+
+        /* ── Evidence Panel ─────────────────────── */
+        .evidence-source {
+            background: var(--green-dim);
+            border: 1px solid rgba(0,214,143,0.3);
+            border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;
+            font-size: 0.82rem; color: var(--green);
+            display: flex; align-items: center; gap: 8px;
+        }
+        .evidence-source::before { content: '🔒'; }
+        .egress-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+        }
+        .egress-item {
+            background: var(--bg); border: 1px solid var(--border);
+            border-radius: 8px; padding: 14px;
+        }
+        .egress-item .host { font-weight: 600; font-size: 0.88rem; word-break: break-all; margin-bottom: 6px; }
+        .egress-item .counts { font-size: 0.82rem; color: var(--text-dim); }
+        .egress-item .allowed { color: var(--green); }
+        .egress-item .denied { color: var(--red); }
+        .egress-item .policy { font-size: 0.75rem; color: var(--text-dim); margin-top: 4px; }
+
+        /* ── Tier Usage Chart ───────────────────── */
+        .tier-chart { display: flex; gap: 20px; flex-wrap: wrap; }
+        .tier-bar-container {
+            flex: 1; min-width: 200px;
+            background: var(--bg); border: 1px solid var(--border);
+            border-radius: 10px; padding: 20px;
+        }
+        .tier-name { font-weight: 700; font-size: 0.95rem; margin-bottom: 4px; }
+        .tier-model { font-size: 0.75rem; color: var(--text-dim); margin-bottom: 12px; }
+        .tier-stat { display: flex; justify-content: space-between; font-size: 0.82rem; margin: 6px 0; }
+        .tier-stat .stat-label { color: var(--text-dim); }
+        .tier-stat .stat-value { font-weight: 600; }
+        .tier-bar {
+            height: 8px; border-radius: 4px; margin-top: 12px;
+            background: rgba(108,92,231,0.15); overflow: hidden;
+        }
+        .tier-bar-fill {
+            height: 100%; border-radius: 4px;
+            background: linear-gradient(90deg, var(--accent), #a29bfe);
+            transition: width 0.5s ease;
+        }
+
+        /* ── Empty States ───────────────────────── */
+        .empty-state {
+            text-align: center; padding: 48px 24px;
+            color: var(--text-dim); font-size: 0.95rem;
+        }
+        .empty-state .icon { font-size: 3rem; margin-bottom: 12px; opacity: 0.5; }
+
+        /* ── Footer ─────────────────────────────── */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 24px 0; margin-top: 48px; text-align: center;
+            font-size: 0.78rem; color: var(--text-dim);
+        }
+
+        /* ── Loading overlay ────────────────────── */
+        .loading-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(15,17,23,0.85); z-index: 100;
+            justify-content: center; align-items: center;
+        }
+        .loading-overlay.active { display: flex; }
+        .loading-spinner {
+            text-align: center; color: var(--text);
+        }
+        .loading-spinner .dots { font-size: 2rem; margin-bottom: 12px; }
+        @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+        .loading-spinner .dots span { animation: pulse 1.5s infinite; }
+        .loading-spinner .dots span:nth-child(2) { animation-delay: 0.3s; }
+        .loading-spinner .dots span:nth-child(3) { animation-delay: 0.6s; }
+
+        /* ── Responsive ─────────────────────────── */
+        @media (max-width: 768px) {
+            .summary-grid { grid-template-columns: repeat(2, 1fr); }
+            .summary-card .value { font-size: 1.8rem; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loading">
+        <div class="loading-spinner">
+            <div class="dots"><span>●</span><span>●</span><span>●</span></div>
+            <p>Scanning for data exposure…</p>
+            <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 8px;">
+                Searching brokers • Extracting procedures • Drafting requests
+            </p>
+        </div>
+    </div>
+
+    <header>
+        <div class="container">
+            <div class="logo">
+                <div class="logo-icon">🛡️</div>
+                <div>
+                    <div>Haven</div>
+                    <div style="font-size: 0.7rem; font-weight: 400; color: var(--text-dim);">Family Data-Exposure Agent</div>
+                </div>
+            </div>
+            <button class="scan-btn" id="scanBtn" onclick="startScan()">
+                🔍 Scan for Exposure
+            </button>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Summary Cards -->
+        <div class="summary-grid">
+            <div class="summary-card exposures">
+                <div class="label">Exposures Found</div>
+                <div class="value">{{ n_exposures }}</div>
+            </div>
+            <div class="summary-card sent">
+                <div class="label">Requests Sent</div>
+                <div class="value">{{ n_sent }}</div>
+            </div>
+            <div class="summary-card confirmed">
+                <div class="label">Confirmed Removed</div>
+                <div class="value">{{ n_confirmed }}</div>
+            </div>
+            <div class="summary-card pending">
+                <div class="label">Pending</div>
+                <div class="value">{{ n_pending }}</div>
+            </div>
+        </div>
+
+        <!-- Family Panel -->
+        <div class="section">
+            <div class="section-header">
+                <h2>👨‍👩‍👧‍👦 Synthetic Family</h2>
+                <span class="badge" style="background: var(--accent-glow); color: var(--accent);">Demo data only</span>
+            </div>
+            <div class="section-body">
+                <div class="family-grid">
+                    {% for member in state.family.members %}
+                    <div class="member-card">
+                        <div class="name">{{ member.first_name }} {{ member.last_name }}</div>
+                        <div class="role">{{ member.role }} · Age {{ member.age }}</div>
+                        <div class="ids">
+                            {% for ident in member.identifiers %}
+                            <span>
+                                <span class="id-kind">{{ ident.kind }}:</span>
+                                {% if ident.sensitivity == "high" %}
+                                <span class="id-redacted">[REDACTED — high sensitivity]</span>
+                                {% else %}
+                                {{ ident.value }}
+                                {% endif %}
+                            </span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Exposure Board -->
+        <div class="section">
+            <div class="section-header">
+                <h2>🔍 Exposure Board</h2>
+                <span class="badge" style="background: var(--red-dim); color: var(--red);">{{ n_exposures }} found</span>
+            </div>
+            <div class="section-body">
+                {% if state.exposures %}
+                <div style="overflow-x: auto;">
+                    <table class="exposure-table">
+                        <thead>
+                            <tr>
+                                <th>Site</th>
+                                <th>Type</th>
+                                <th>Confidence</th>
+                                <th>Evidence</th>
+                                <th>URL</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for exp in state.exposures %}
+                            <tr>
+                                <td><strong>{{ exp.source_name }}</strong></td>
+                                <td><span class="broker-badge {{ exp.broker_type }}">{{ exp.broker_type|replace("_"," ") }}</span></td>
+                                <td>
+                                    <div class="confidence-bar" style="width: {{ (exp.confidence * 100)|int }}px;" title="{{ (exp.confidence * 100)|round(1) }}%"></div>
+                                    <span style="font-size: 0.75rem; color: var(--text-dim); margin-left: 6px;">{{ (exp.confidence * 100)|round(1) }}%</span>
+                                </td>
+                                <td style="max-width: 300px; font-size: 0.82rem; color: var(--text-dim);">{{ exp.evidence_snippet[:120] }}{% if exp.evidence_snippet|length > 120 %}…{% endif %}</td>
+                                <td><a href="{{ exp.source_url }}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none; font-size: 0.82rem;">View ↗</a></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <div class="icon">🔍</div>
+                    <p>No exposures found yet. Click <strong>Scan for Exposure</strong> to start.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Action Tracker -->
+        <div class="section">
+            <div class="section-header">
+                <h2>📋 Removal Actions</h2>
+                <span class="badge" style="background: var(--yellow-dim); color: var(--yellow);">{{ state.actions|length }} drafts</span>
+            </div>
+            <div class="section-body">
+                {% if state.actions %}
+                <div class="action-list">
+                    {% for action in state.actions %}
+                    <div class="action-card" id="action-{{ action.id }}">
+                        <div class="action-header">
+                            <span class="site-name">
+                                {% for exp in state.exposures if exp.id == action.exposure_id %}
+                                {{ exp.source_name }}
+                                {% endfor %}
+                            </span>
+                            <span class="status-badge {{ action.status }}">{{ action.status|replace("_"," ") }}</span>
+                        </div>
+                        <div style="font-size: 0.78rem; color: var(--text-dim); margin-bottom: 8px;">
+                            Method: {{ action.procedure.method|replace("_"," ") }} ·
+                            Model: {{ action.drafted_model.split("/")|last }}
+                        </div>
+                        <div class="draft-content">{{ action.draft }}</div>
+                        <div class="action-buttons">
+                            {% if action.status == "drafted" %}
+                            <button class="btn-approve" onclick="updateAction('{{ action.id }}', 'approve')">✓ Approve</button>
+                            {% elif action.status == "approved" %}
+                            <button class="btn-sent" onclick="updateAction('{{ action.id }}', 'sent')">📤 Mark as Sent</button>
+                            {% elif action.status == "sent" %}
+                            <button class="btn-confirm" onclick="updateAction('{{ action.id }}', 'confirm')">✅ Confirm Removed</button>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <div class="icon">📋</div>
+                    <p>No removal actions yet. Run a scan first.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Evidence Panel (the money shot) -->
+        <div class="section">
+            <div class="section-header">
+                <h2>🔒 Data That Left This Machine</h2>
+                <span class="badge" style="background: var(--green-dim); color: var(--green);">Enforcement layer</span>
+            </div>
+            <div class="section-body">
+                <div class="evidence-source">
+                    Source: <strong>OpenShell OCSF audit logs</strong> — this data comes from the
+                    enforcement layer, NOT from the agent. The agent cannot fabricate or suppress
+                    these records.
+                </div>
+                {% if egress_summary.destinations %}
+                <div style="margin-bottom: 16px; font-size: 0.88rem;">
+                    <span class="allowed" style="color: var(--green);">{{ egress_summary.total_allowed }} allowed</span> ·
+                    <span class="denied" style="color: var(--red);">{{ egress_summary.total_denied }} denied</span>
+                </div>
+                <div class="egress-grid">
+                    {% for dest in egress_summary.destinations %}
+                    <div class="egress-item">
+                        <div class="host">{{ dest.host }}</div>
+                        <div class="counts">
+                            <span class="allowed">✓ {{ dest.allowed }}</span> ·
+                            <span class="denied">✗ {{ dest.denied }}</span> ·
+                            {{ dest.bytes_out }} bytes
+                        </div>
+                        {% if dest.policies %}
+                        <div class="policy">Policy: {{ dest.policies|join(", ") }}</div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state" style="padding: 24px;">
+                    <p>No egress records yet. In production, OpenShell audit logs populate this panel automatically.</p>
+                    <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 8px;">
+                        Run on Linux with OpenShell to see real enforcement data.
+                    </p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Tier Usage Chart -->
+        <div class="section">
+            <div class="section-header">
+                <h2>📊 Model Tier Usage</h2>
+                <span class="badge" style="background: rgba(108,92,231,0.2); color: var(--accent);">Tiered inference</span>
+            </div>
+            <div class="section-body">
+                {% if tier_usage %}
+                <div class="tier-chart">
+                    {% set ns = namespace(max_tokens=1) %}
+                    {% for u in tier_usage %}
+                        {% if u.input_tokens + u.output_tokens > ns.max_tokens %}
+                            {% set ns.max_tokens = u.input_tokens + u.output_tokens %}
+                        {% endif %}
+                    {% endfor %}
+                    {% set tier_stats = {} %}
+                    {% for u in tier_usage %}
+                        {% if u.tier not in tier_stats %}
+                            {% set _ = tier_stats.update({u.tier: {"model": u.model, "in": 0, "out": 0, "calls": 0, "latency": 0}}) %}
+                        {% endif %}
+                        {% set s = tier_stats[u.tier] %}
+                        {% set _ = s.update({"in": s["in"] + u.input_tokens, "out": s["out"] + u.output_tokens, "calls": s["calls"] + 1, "latency": s["latency"] + u.latency_ms}) %}
+                    {% endfor %}
+                    {% for tier_name, stats in tier_stats.items() %}
+                    <div class="tier-bar-container">
+                        <div class="tier-name">{{ tier_name|upper }}</div>
+                        <div class="tier-model">{{ stats.model }}</div>
+                        <div class="tier-stat">
+                            <span class="stat-label">Calls</span>
+                            <span class="stat-value">{{ stats.calls }}</span>
+                        </div>
+                        <div class="tier-stat">
+                            <span class="stat-label">Input tokens</span>
+                            <span class="stat-value">{{ "{:,}".format(stats["in"]) }}</span>
+                        </div>
+                        <div class="tier-stat">
+                            <span class="stat-label">Output tokens</span>
+                            <span class="stat-value">{{ "{:,}".format(stats["out"]) }}</span>
+                        </div>
+                        <div class="tier-stat">
+                            <span class="stat-label">Avg latency</span>
+                            <span class="stat-value">{{ (stats.latency / stats.calls)|round(0)|int if stats.calls > 0 else 0 }}ms</span>
+                        </div>
+                        <div class="tier-bar">
+                            <div class="tier-bar-fill" style="width: {{ ((stats['in'] + stats['out']) / ns.max_tokens * 100)|int }}%;"></div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state" style="padding: 24px;">
+                    <div class="icon">📊</div>
+                    <p>No model calls recorded yet. Run a scan to see tier usage.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>Haven — Family Data-Exposure Agent · Nebius × NVIDIA Global AI Hackathon</p>
+            <p style="margin-top: 4px;">All data is synthetic. No real personal data is used. MIT License.</p>
+        </div>
+    </footer>
+
+    <script>
+        async function startScan() {
+            const btn = document.getElementById('scanBtn');
+            const loading = document.getElementById('loading');
+            btn.disabled = true;
+            btn.textContent = '⏳ Scanning…';
+            loading.classList.add('active');
+
+            try {
+                const res = await fetch('/api/scan', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Scan failed: ' + (data.detail || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Network error: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔍 Scan for Exposure';
+                loading.classList.remove('active');
+            }
+        }
+
+        async function updateAction(actionId, endpoint) {
+            try {
+                const res = await fetch(`/api/actions/${actionId}/${endpoint}`, { method: 'POST' });
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    const data = await res.json();
+                    alert('Action failed: ' + (data.detail || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Network error: ' + err.message);
+            }
+        }
+    </script>
+</body>
+</html>
