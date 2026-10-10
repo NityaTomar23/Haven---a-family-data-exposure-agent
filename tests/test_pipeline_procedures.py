@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from typing import Any
 
 import pytest
 
 from haven import llm, pipeline
-from haven.models import Exposure, Family, RemovalProcedure, TierUsage
+from haven.models import Exposure, Family, RemovalProcedure
 
 from conftest import make_exposure, make_procedure
 
@@ -382,58 +381,5 @@ def test_drafts_are_never_auto_sent(family: Family, monkeypatch):
     assert {a.status for a in actions} == {"drafted"}
 
 
-# ── Full pipeline ──────────────────────────────────────────────────────
-
-
-def test_run_pipeline_returns_a_populated_state(family: Family, monkeypatch):
-    def fake_search(query: str, *, max_results: int = 10):
-        return [
-            {
-                "url": "https://spokeo.example/p/maria",
-                "title": "Maria Castillo",
-                "content": "Maria Castillo, Springfield IL",
-            }
-        ]
-
-    def fake_optout(site_name: str):
-        return [{"url": "https://optout.example", "content": "opt out here"}]
-
-    def fake_complete(**kwargs):
-        llm._usage_log.append(
-            TierUsage(
-                model=llm.TIER_MODELS[kwargs["tier"]],
-                tier=kwargs["tier"],
-                input_tokens=100,
-                output_tokens=50,
-                latency_ms=12.5,
-                purpose=kwargs["purpose"],
-                timestamp=datetime.now(timezone.utc),
-            )
-        )
-        if kwargs["purpose"] == "classify_search_result":
-            return json.dumps(
-                {
-                    "relevant": True,
-                    "confidence": 0.9,
-                    "broker_type": "people_search",
-                    "source_name": "Spokeo",
-                    "evidence": "match",
-                }
-            )
-        if kwargs["purpose"] == "extract_optout_procedure":
-            return _procedure_json()
-        return "DRAFT — for human review."
-
-    monkeypatch.setattr("haven.research.search_brokers", fake_search)
-    monkeypatch.setattr("haven.research.search_optout_procedure", fake_optout)
-    monkeypatch.setattr("haven.research.extract_page", lambda url: {"raw_content": "x"})
-    monkeypatch.setattr("haven.llm.complete", fake_complete)
-
-    state = pipeline.run_pipeline(family)
-
-    assert state.family is family
-    assert len(state.exposures) == 1
-    assert len(state.procedures) == 1
-    assert len(state.actions) == 1
-    assert state.tier_usage  # usage log is surfaced for the dashboard chart
-    assert {u.tier for u in state.tier_usage} == {"nano", "super"}
+# The end-to-end run_pipeline behaviour lives in tests/test_pipeline.py. This
+# module covers the individual stages only.

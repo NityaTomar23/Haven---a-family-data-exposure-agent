@@ -1,9 +1,10 @@
-"""Static validation of the OpenShell policy artifacts.
+"""Boundary assertions: unauthorized egress is blocked, deny-by-default.
 
-These tests cannot prove the egress boundary -- only OpenShell on Linux can do
-that, and it has not been run. What they *can* do is catch the mistakes that
-would make the eventual proof meaningless, all of which are silent failures in
-OpenShell itself:
+These tests are the static half of the boundary claim. They cannot prove the
+egress boundary -- only OpenShell on Linux can do that, by running
+policy/boundary_test.sh, and it has not been run. What they *can* do is catch
+the mistakes that would make the eventual proof meaningless, all of which are
+silent failures in OpenShell itself:
 
 * a symlinked interpreter path, which never matches the hashed executable;
 * filesystem paths that differ between candidate and boundary, which makes the
