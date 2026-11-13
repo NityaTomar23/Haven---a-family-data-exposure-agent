@@ -25,6 +25,7 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from haven.models import EgressRecord
 
@@ -137,6 +138,7 @@ def _parse_ocsf_record(data: dict) -> EgressRecord:
         matched_policy=_parse_policy(data),
         bytes_out=_parse_bytes_out(data),
         request_count=_parse_request_count(data),
+        simulated=bool(data.get("simulated", False)),
     )
 
 
@@ -226,24 +228,31 @@ def _parse_policy(data: dict) -> str | None:
     return None
 
 
-def _parse_bytes_out(data: dict) -> int:
-    """Bytes sent upstream.
+def _parse_bytes_out(data: dict) -> int | None:
+    """Bytes sent upstream, or None when omitted by the source event.
 
-    OpenShell's published exemplar records omit byte counts, so this is
-    frequently 0 -- which the dashboard must not present as "no traffic".
+    OpenShell's published exemplar records omit byte counts, so None is
+    normal -- never invent 0 bytes when the field was not recorded.
     """
     traffic = data.get("traffic") or {}
-    if isinstance(traffic, dict) and traffic.get("bytes_out"):
-        return int(traffic["bytes_out"])
+    if isinstance(traffic, dict):
+        raw = traffic.get("bytes_out")
+        if not isinstance(raw, bool) and isinstance(raw, (int, float)):
+            return int(raw)
     flat = data.get("bytes_out")
-    return int(flat) if isinstance(flat, (int, float)) else 0
+    if not isinstance(flat, bool) and isinstance(flat, (int, float)):
+        return int(flat)
+    return None
 
 
-def _parse_request_count(data: dict) -> int:
-    """Requests represented by this record; OpenShell writes one per event."""
+def _parse_request_count(data: dict) -> int | None:
+    """Requests represented by this record, or None when omitted.
+
+    Never inferred from connection events when absent.
+    """
     raw = data.get("request_count")
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-        return 1
+        return None
     return max(1, int(raw))
 
 
@@ -251,7 +260,8 @@ def write_simulated_log(records: list[EgressRecord], path: str) -> None:
     """Write simulated egress records for development and testing.
 
     Production never calls this: records come from the enforcement layer.
-    The output uses the simplified flat format, which read_egress_log accepts.
+    The output uses the simplified flat format, which read_egress_log accepts,
+    and explicitly tags each record as ``simulated: true``.
     """
     log_path = Path(path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -264,8 +274,18 @@ def write_simulated_log(records: list[EgressRecord], path: str) -> None:
                 "matched_policy": record.matched_policy,
                 "bytes_out": record.bytes_out,
                 "request_count": record.request_count,
+                "simulated": True,
             }
             handle.write(json.dumps(entry) + "\n")
+
+
+def evidence_status(records: list[EgressRecord]) -> Literal["real", "simulated", "unavailable"]:
+    """Report whether egress records are real OpenShell logs, simulated, or absent."""
+    if not records:
+        return "unavailable"
+    if all(r.simulated for r in records):
+        return "simulated"
+    return "real"
 
 
 def summarize_egress(records: list[EgressRecord]) -> dict:
@@ -290,12 +310,12 @@ def summarize_egress(records: list[EgressRecord]) -> dict:
             }
         entry = by_dest[host]
         if record.decision == "allowed":
-            entry["allowed"] += record.request_count
-            total_allowed += record.request_count
+            entry["allowed"] += record.request_count or 1
+            total_allowed += record.request_count or 1
         else:
-            entry["denied"] += record.request_count
-            total_denied += record.request_count
-        entry["bytes_out"] += record.bytes_out
+            entry["denied"] += record.request_count or 1
+            total_denied += record.request_count or 1
+        entry["bytes_out"] += record.bytes_out or 0
         if record.matched_policy:
             entry["policies"].add(record.matched_policy)
 

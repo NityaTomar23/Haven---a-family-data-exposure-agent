@@ -94,7 +94,7 @@ def test_simplified_flat_record_is_supported():
     assert record.decision == "denied"
     assert record.matched_policy == "deny-all"
     assert record.bytes_out == 10
-    assert record.request_count == 1  # OCSF-absent default
+    assert record.request_count is None  # omitted when not in source event
     assert record.timestamp == datetime(2024, 5, 1, 12, 0, tzinfo=timezone.utc)
 
 
@@ -106,10 +106,11 @@ def test_missing_timestamp_falls_back_to_now():
     assert before <= record.timestamp <= after
 
 
-def test_missing_byte_count_defaults_to_zero():
+def test_missing_byte_count_is_none():
     record = evidence._parse_ocsf_record({"destination_host": "x"})
 
-    assert record.bytes_out == 0
+    assert record.bytes_out is None
+    assert record.request_count is None
 
 
 def test_matched_policy_is_optional():
@@ -295,7 +296,7 @@ def test_summary_is_json_serialisable():
 # receive, so they are asserted rather than the older invented ones.
 
 
-def _ocsf_allowed() -> dict:
+def _ocsf_allowed() -> dict[str, object]:
     return {
         "class_uid": 4001,
         "class_name": "Network Activity",
@@ -319,7 +320,7 @@ def _ocsf_allowed() -> dict:
     }
 
 
-def _ocsf_denied() -> dict:
+def _ocsf_denied() -> dict[str, object]:
     return {
         "class_uid": 4001,
         "class_name": "Network Activity",
@@ -432,15 +433,29 @@ def test_glob_with_no_matches_yields_no_records(tmp_path: Path):
     assert evidence.read_egress_log(str(tmp_path / "openshell-ocsf*.log")) == []
 
 
-def test_ocsf_record_without_traffic_reports_zero_bytes():
-    """OpenShell's published exemplars omit byte counts, so 0 is normal."""
+def test_ocsf_record_without_traffic_leaves_bytes_and_request_count_none():
+    """OpenShell's published exemplars omit byte counts; never invent 0 or 1."""
     record = evidence._parse_ocsf_record(_ocsf_allowed())
 
-    assert record.bytes_out == 0
-    assert record.request_count == 1
+    assert record.bytes_out is None
+    assert record.request_count is None
 
 
 def test_disposition_zero_falls_back_to_the_action_string():
     record = dict(_ocsf_allowed(), disposition_id=0, action="Denied")
 
     assert evidence._parse_ocsf_record(record).decision == "denied"
+
+
+def test_evidence_status_distinguishes_real_simulated_and_unavailable(tmp_path: Path):
+    assert evidence.evidence_status([]) == "unavailable"
+
+    sim_log = tmp_path / "sim.jsonl"
+    evidence.write_simulated_log([_record()], str(sim_log))
+    sim_records = evidence.read_egress_log(str(sim_log))
+    assert all(r.simulated for r in sim_records)
+    assert evidence.evidence_status(sim_records) == "simulated"
+
+    real_record = evidence._parse_ocsf_record(_ocsf_allowed())
+    assert real_record.simulated is False
+    assert evidence.evidence_status([real_record]) == "real"

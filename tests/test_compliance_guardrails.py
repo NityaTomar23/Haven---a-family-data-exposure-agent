@@ -203,7 +203,18 @@ def test_verify_models_helper_exists():
 
 @pytest.mark.parametrize(
     "module",
-    ["api", "evidence", "llm", "models", "pipeline", "research", "seed"],
+    [
+        "api",
+        "evidence",
+        "fixtures",
+        "llm",
+        "models",
+        "offline",
+        "pipeline",
+        "privacy",
+        "research",
+        "seed",
+    ],
 )
 def test_modules_do_not_import_generic_http_clients(module: str):
     """Shipped code may only reach the network through the Tavily and OpenAI

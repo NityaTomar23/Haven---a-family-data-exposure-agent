@@ -1,269 +1,121 @@
-# Haven
+# Haven — Family Data-Exposure Agent
 
-**A family data-exposure agent that finds where a family's personal information
-is publicly exposed, and drives the removal.**
+**Privacy-preserving personal-data discovery, opt-out procedure research, and human-gated removal drafting on Nebius Token Factory, Tavily, and NVIDIA OpenShell.**
 
-> It's a smoke detector for your family's data — and it proves it can't leak the
-> very data it protects.
+> **Built for the Nebius × NVIDIA Global AI Hackathon (2026) — MIT Licensed ([`LICENSE`](LICENSE)).**
 
-## The problem
+---
 
-Data brokers, people-search sites, and breach dumps expose a family's home
-address, phone numbers, and — for children — school and activity details.
-Opt-out procedures are scattered across hundreds of sites, each with a different
-process. Parents do not have forty hours to chase them.
+## Core Privacy Guarantee
 
-Haven researches which brokers plausibly hold records, extracts each site's
-opt-out procedure, drafts a removal request per site, and tracks every request
-to completion on a dashboard.
+Haven is built around a simple premise: **a privacy agent must never leak personal data to discover or remove personal data.**
 
-## The non-negotiable design constraint
+1. **Zero-PII External Research:** Haven never queries Tavily Search, Tavily Extract, or any LLM with a person's name, email, phone number, address, or listing URL.
+2. **Fail-Closed Outbound Gate ([`src/haven/privacy.py`](src/haven/privacy.py)):** Every outbound request body passes through `haven.privacy.check()` *before* the Tavily or OpenAI SDK client is even constructed. Any payload containing a protected family identifier, surname, phone digit sequence, email/local part, address, city/state, listing URL, or raw listing sentence raises `PayloadBlocked` and refuses to send.
+3. **Purely Local Matching ([`src/haven/fixtures.py`](src/haven/fixtures.py)):** Profile matching runs 100% locally against synthetic RFC 2606 `.example` listing fixtures using exact identifier rules (`verified`, `candidate`, `rejected`) — never an LLM relevance score.
+4. **Placeholder-Only Drafting & Human Gates ([`src/haven/pipeline.py`](src/haven/pipeline.py), [`src/haven/api.py`](src/haven/api.py)):** Drafts use placeholders (`[FULL_NAME]`, `[LISTING_URL]`, `[EMAIL]`, `[PHONE]`, `[ADDRESS]`). Haven has no email sender or form submitter and strictly enforces `drafted → approved → sent → confirmed_removed`.
+5. **Pre-Scan Consent & Rate Limiting:** `POST /api/scan` requires explicit `{"consent": true}` (rejecting any extra personal-data fields with `422`) and enforces a sliding-window hourly rate limit (`HAVEN_SCAN_RATE_LIMIT`, default `10/hr`).
 
-**The agent must be able to reach the public web to find exposed data, while
-being provably incapable of exfiltrating the family's own personal data.**
+> [!WARNING]
+> **Sanctioned Endpoints Only:** All LLM inference routes strictly to **Nebius Token Factory** (`https://api.tokenfactory.us-central1.nebius.com/v1/` by default, or `https://api.tokenfactory.nebius.com/v1/` via `NEBIUS_BASE_URL`). Never route inference to `integrate.api.nvidia.com` or `build.nvidia.com` — both are explicitly denylisted in `llm.FORBIDDEN_INFERENCE_HOSTS` and excluded from `policy/policy.yaml`.
 
-That has to be enforced by the sandbox runtime as code, not by a prompt, and the
-evidence of enforcement has to be captured by the enforcement layer rather than
-self-reported by the agent. A demo where the agent displays a privacy counter it
-controls proves nothing.
+---
 
-## Status — read this before believing anything else
+## Architecture & Tiered NVIDIA Nemotron 3 Stack
 
-This repository is honest about the difference between what is implemented and
-what is proven. **No claim in this README about the sandbox boundary has been
-executed.**
+| Stage | Network | Model / Tool | Output & Guardrail |
+|---|---|---|---|
+| **0. Seed Family** | None (local) | `haven.seed` | Deterministic adults-only synthetic household (`Avery Synthwell` & `Jordan Synthwell`, `Sampleville, CA 00000`, `@example.com`, `555-01xx`) |
+| **1a. Generic Inventory** | External (PII-free) | Tavily Search + **Nemotron 3 Nano** | Classifies data-broker sites from generic category queries; tags `local_fixture` vs `manual_only` |
+| **1b. Local Matching** | None (local) | `haven.pipeline.match_local_listings` | Exact local match against 7 `.example` listings → `verified`, `candidate`, or `rejected` (high-sensitivity values redacted in snippets) |
+| **2. Procedure Research** | External (PII-free) | Tavily Search/Extract + **Nemotron 3 Super** | Fences retrieved web pages inside `<untrusted_page_content>` tags; records `statutory_deadline_days` only when both `jurisdiction` and an authoritative `deadline_source_url` are verified (distinct from `service_target_days`) |
+| **3a. Multi-Site Strategy** | External (PII-free) | **Nemotron 3 Ultra** | Synthesizes a cross-broker removal sequence when 5+ non-rejected exposures exist |
+| **3b. Request Drafting** | External (PII-free) | **Nemotron 3 Super** | Produces placeholder-only drafts for human review (`[FULL_NAME]`, `[LISTING_URL]`, etc.) |
+| **4. Egress Evidence** | Host / Local | `haven.evidence` | Parses OpenShell OCSF JSONL logs (`evidence_status`: `real`, `simulated`, or `unavailable`) without fabricating missing fields |
 
-| Claim | Status |
-| --- | --- |
-| Discovery → procedure extraction → drafting → tracking pipeline | **Implemented**, exercised by the test suite |
-| Dashboard with exposure board, action tracker, tier-usage chart, egress panel | **Implemented**, renders under test |
-| Evidence reader parses OpenShell OCSF audit logs | **Implemented**, asserted against the published OCSF v1.8.0 record shapes |
-| OpenShell sandbox blocks non-allowlisted egress with a 403 | **Authored, UNVERIFIED.** The policy and boundary test exist and have never been loaded or run |
-| OpenShell Policy Prover has proven the boundary | **Not run.** No Prover output exists in this repository |
-| The agent process never holds the Tavily or Nebius keys | **Design intent only.** With no sandbox in place, `llm.py` and `research.py` read the keys from the environment |
-| End-to-end run against live Token Factory / Tavily | **Not performed.** No API key was available in this environment |
-| Real personal data | **None anywhere.** `src/haven/seed.py` generates a synthetic family and is the only data source |
+---
 
-The sandbox half could not be built here: OpenShell requires Linux with
-[Landlock](https://docs.kernel.org/security/landlock.html) ABI v3 (Linux 6.2+)
-plus a Docker daemon (official minimum 28.0), and this checkout was prepared on
-Windows 11 with neither WSL nor Docker installed. See
-[docs/architecture.png](docs/architecture.png) for the diagram,
-[docs/architecture.md](docs/architecture.md) for the full "what is enforced vs
-what is claimed" breakdown, and [policy/README.md](policy/README.md) for what
-still needs to be verified on a Linux host.
+## Quick Start
 
-## Quickstart
-
-Requirements: Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+### 1. Local Python (One-Command Launch)
 
 ```bash
-git clone <your-fork> haven && cd haven
-cp .env.example .env          # then add your two API keys
+cp .env.example .env
+# Add NEBIUS_API_KEY and TAVILY_API_KEY for live inference,
+# or leave HAVEN_PROVIDER_MODE=auto to run in labeled offline/simulated mode.
+
+# Option A: uv
 uv sync
+uv run python scripts/serve.py
+
+# Option B: standard Python / bash helper
+pip install -e .  # or install dependencies from pyproject.toml
+bash scripts/run_demo.sh
 ```
 
-Check that every configured model id actually exists on the endpoint. This is
-the only way to settle the nano tier, whose id is **unverified** (see
-[Model tiering](#model-tiering)):
+Open **http://127.0.0.1:8000** in your browser, check the explicit pre-scan consent box, and click **Run Privacy Scan**.
+
+### 2. Docker
 
 ```bash
-uv run python scripts/verify_models.py --list
+docker build -t haven .
+docker run --rm -p 8000:8000 --env-file .env haven
 ```
 
-Run the tests — no API keys needed, and no test touches the network:
+### 3. Provider Modes (`HAVEN_PROVIDER_MODE`)
+
+* `auto` *(default)*: Uses live Nebius Token Factory + Tavily when both `NEBIUS_API_KEY` and `TAVILY_API_KEY` are set; otherwise falls back cleanly to deterministic local stand-ins (`haven.offline`) and labels every tier usage entry and simulated OCSF record as **simulated**.
+* `live`: Requires both keys and fails loudly instead of falling back.
+* `offline`: Runs completely offline (`simulated=True`), useful for UI walkthroughs without spending credits.
+
+---
+
+## Testing & Repository Guardrails
+
+Run the full automated suite (`229` tests covering privacy invariants, local matching, consent/rate gates, OCSF log parsing, YAML sandbox policies, and compliance guardrails):
 
 ```bash
-uv run pytest
+python -m pytest tests/ -v
 ```
 
-Run the dashboard:
+Once you have a `NEBIUS_API_KEY` and `TAVILY_API_KEY`, verify live Token Factory models and run the end-to-end compliance spine:
 
 ```bash
-uv run python scripts/serve.py     # http://127.0.0.1:8000
+python scripts/verify_models.py
+python scripts/compliance_spine.py
 ```
 
-`uvicorn haven.api:app` on its own raises `ModuleNotFoundError`: the project sets
-`[tool.uv] package = false`, so `haven` is never installed and `scripts/serve.py`
-puts `src/` on the import path instead.
+---
 
-Finally, the day-one compliance spine, which sends one fixed, generic prompt and
-one generic search and accepts no family identifiers:
+## Verification Status — Honest Disclosure of What Has & Has Not Been Run
 
-```bash
-uv run python scripts/compliance_spine.py
+To uphold strict hackathon engineering integrity, here is the exact verification boundary of this repository:
+
+* **Verified locally:**
+  * All **229 pytest checks** pass (privacy canary gate failing closed before SDK calls, zero-PII outbound payload checks across the pipeline, local `verified`/`candidate`/`rejected` matching, strict statutory deadline provenance, explicit `/api/scan` consent & rate limiting, OCSF evidence parsing & status classification, policy YAML schema validation, and executable compliance guardrails).
+* **Not yet verified in this build environment:**
+  1. **NVIDIA OpenShell Runtime & Policy Prover:** `policy/policy.yaml`, `policy/policy.hardened.yaml`, and `policy/boundary_test.sh` were statically validated against schema invariants in `tests/test_boundary.py`, **not** executed under `openshell sandbox create` (the workspace host ran Windows 11 without WSL2/Docker or Linux Landlock ABI v3+). Supervisor-grade OCSF egress enforcement must be verified on Linux/OpenShell (`policy/README.md`).
+  2. **Live Nebius Token Factory & Tavily Calls (`nano` model ID):** Live API keys were not present in the build environment. While `nvidia/nemotron-3-super-120b-a12b` and `nvidia/Nemotron-3-Ultra-550b-a55b` match the Nebius cookbook, the default `nano` ID (`nvidia/nemotron-3-nano-30b`, candidate `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`) remains **unverified** against `/v1/models` until `python scripts/verify_models.py` is run with a live `NEBIUS_API_KEY` (override via `NEBIUS_MODEL_NANO`).
+
+---
+
+## Project Layout
+
+```text
+src/haven/
+  api.py        FastAPI app, consent/rate-limit gates, human action transitions, dashboard
+  evidence.py   OpenShell OCSF JSONL parser & real/simulated/unavailable status classifier
+  fixtures.py   7 synthetic RFC 2606 .example listings (verified, candidate, rejected, none)
+  llm.py        Nebius Token Factory client (nano/super/ultra) + forbidden host denylist
+  models.py     Pydantic domain models (adults-only household, match_status, provenance)
+  offline.py    Deterministic simulated Tavily/OpenAI stand-ins for keyless demo runs
+  pipeline.py   Discover inventory -> local match -> opt-out extract -> strategy -> draft
+  privacy.py    Fail-closed outbound payload gate blocking family & listing terms pre-SDK
+  research.py   Identifier-free Tavily Search & Extract wrappers
+  seed.py       Deterministic adults-only Synthwell household generator & redactor
+policy/         OpenShell Landlock + network egress YAML policies & boundary test script
+agent/          Hermes-style skill specifications & memory policy
+web/templates/  Server-rendered dark-mode operational privacy dashboard
+scripts/        serve.py, compliance_spine.py, verify_models.py, run_demo.sh
+tests/          229 automated unit, integration, boundary, and guardrail checks
 ```
-
-## How Token Factory is used
-
-Every model call goes to Nebius Token Factory over the OpenAI-compatible API. No
-other inference endpoint is permitted in shipped code, and a test enforces that
-(see [Guardrails](#guardrails)).
-
-| Tier | Role | Model | Verified? |
-| --- | --- | --- | --- |
-| nano | extraction, classification, routing — every-turn calls | `nvidia/nemotron-3-nano-30b` | **No** — see below |
-| super | the workhorse: reasoning, drafting, planning | `nvidia/nemotron-3-super-120b-a12b` | Yes |
-| ultra | hard cases only: multi-site strategy over long context | `nvidia/Nemotron-3-Ultra-550b-a55b` | Yes |
-
-*Verified* means the exact id appears in Nebius's official
-[Token Factory cookbook](https://github.com/nebius/token-factory-cookbook/blob/main/models/nemotron/README.md).
-The nano id does **not** appear there. The 30B-class Nemotron listed is
-`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`, and the featured small model is
-`nvidia/Nemotron-3_5-Lightning`. Run `scripts/verify_models.py` against a live
-key to settle it, then set `NEBIUS_MODEL_NANO`.
-
-Per-tier token counts and latency are logged and rendered as a chart, so the
-tiering can be shown to pay off rather than merely asserted.
-
-### Endpoint
-
-The default is the region-specific host the project brief mandates,
-`https://api.tokenfactory.us-central1.nebius.com/v1/`. Nebius documents public
-endpoints as global and warns that a region-specific base URL *"can stop working
-if the endpoint's processing region changes"*. The documented region-free host is
-`https://api.tokenfactory.nebius.com/v1/`, and setting `NEBIUS_BASE_URL` switches
-to it. Both hosts are allowlisted in `policy/policy.yaml`, so switching is a
-configuration change rather than a policy change.
-
-## How Tavily is used
-
-Tavily is the agent's research mechanism, not a decoration:
-
-* **Tavily Search** (`search_depth="advanced"`) finds candidate broker and
-  people-search listings, then finds each site's opt-out procedure page.
-* **Tavily Extract** reads those pages so the procedure can be synthesized.
-
-`src/haven/research.py` wraps both. The installed SDK (0.8.5) also exposes
-`crawl`, `map`, and an `AsyncTavilyClient`, but **no `research` method** — that
-endpoint is not available in the pinned version.
-
-## Security model
-
-The intended deployment puts the agent inside an OpenShell sandbox with a
-deny-by-default policy:
-
-* **Only two hosts are reachable** — Token Factory and Tavily — and only for the
-  specific REST methods and paths the agent needs. Everything else returns 403.
-* **Credentials are brokered at the proxy boundary**, so the agent process never
-  holds the API keys.
-* **Filesystem access is restricted** to the sandbox working directory and
-  `/tmp`; the rest of the filesystem is read-only or absent.
-* **`landlock.compatibility: hard_requirement`**, not `best_effort`. The latter
-  silently runs *without* the filesystem rules when they cannot be applied, which
-  would void half the policy. The Policy Prover agrees: it reports
-  `exceeds_boundary` when a candidate downgrades to `best_effort`.
-* **Evidence comes from the enforcement layer.** The dashboard's "what left this
-  machine" panel reads OpenShell's OCSF audit JSONL and is labelled on screen as
-  coming from OpenShell rather than from the agent.
-
-A second, stronger control is authored but *not* prover-verifiable:
-`policy/policy.hardened.yaml` adds an `openshell/regex` middleware that redacts
-high-sensitivity patterns from allowed request bodies, failing closed. The Prover
-models only filesystem, process, Landlock, L4, and REST, so a policy using
-`network_middlewares` may return `unsupported` — which counts as a failure. The
-arrangement is therefore: **run** the hardened policy, **prove** the core one.
-See [policy/README.md](policy/README.md).
-
-### What would prove it
-
-```bash
-policy/boundary_test.sh haven
-```
-
-Four steps: an allowlisted host must be reachable (a positive control, so a
-totally broken network cannot make the negative test pass vacuously); a
-non-allowlisted host must fail *through an allowlisted binary*, so the failure is
-a policy denial rather than a missing executable; the Prover must report
-`within_boundary` for `policy.yaml`; and it must report `exceeds_boundary` for
-`policy/counterexample.yaml`, which proves the Prover actually discriminates.
-Only `within_boundary` is a pass.
-
-**None of this has been run.** The script's output belongs in `docs/`.
-
-## Guardrails
-
-Hackathon compliance constraints, enforced as tests rather than promises:
-
-* no shipped code or configuration routes to `integrate.api.nvidia.com` or
-  `build.nvidia.com` — **these must never be the inference endpoint**; the only
-  permitted mention is the denylist constant in `llm.py`, and the prose is
-  required to warn about them;
-* all three tiers are distinct NVIDIA open models;
-* shipped modules may not import a raw HTTP client (`requests`, `httpx`,
-  `aiohttp`, `urllib`, `smtplib`, `selenium`, `playwright`) — only the Tavily and
-  OpenAI SDKs may reach the network, which is what makes "no automated form
-  submission" checkable;
-* the README must disclose the unverified sandbox status. A README that implies
-  a proof that was never run fails the suite.
-
-## Privacy invariants
-
-`tests/test_privacy_invariants.py` drives a full pipeline run with fakes on both
-providers, records every payload that *would* have crossed the network boundary,
-and asserts no high-sensitivity identifier value is in any of them. Additional
-guards: no search query may contain a digit or `@` (every identifier with either
-is high-sensitivity); the classifier prompt must show `[REDACTED]` in place of
-high-sensitivity values; and no child name or school may appear in an outbound
-draft prompt.
-
-Two display behaviours are deliberate and pinned by tests, so neither can drift
-silently:
-
-1. **The dashboard family card shows member names** — including a child's. The
-   local operator console is not an egress path, and the parent already knows
-   their own child's name. What must not follow the name is the sensitive
-   context around it, which is why the school identifier is redacted directly
-   beside it.
-2. **`GET /api/family` redacts high-sensitivity identifier values by default.**
-   The API must not hand out what the UI it feeds refuses to display, and the
-   hackathon requires a public hosted demo URL. `?reveal=true` is the explicit
-   local-operator opt-in for the raw values.
-
-Neither behaviour weakens the actual invariant, which is about egress: the
-dashboard can print a name, but no high-sensitivity value may appear in any
-payload sent to a model or a search API.
-
-## Consent and ethics constraints
-
-* The demo uses **synthetic personas only**. `seed.py` is the only data source.
-* **No automated form submission.** The agent drafts; a human reviews and sends.
-  `mark_sent` refuses any action that has not already been approved.
-* **No credential stuffing, no bypassing logins or paywalls, no scraping behind
-  authentication.**
-* Obey `robots.txt` and each site's terms. If a site forbids automated access,
-  record the manual procedure for the parent instead of attempting access.
-* Human-in-the-loop on all outbound content.
-
-## Repository layout
-
-```
-haven/
-├── LICENSE                  MIT
-├── agent/                   Hermes env template, the three pipeline skills, memory note
-├── docs/                    architecture (md + png), 3-minute demo script
-├── policy/                  OpenShell policy, boundary policy, counterexample, boundary test
-├── scripts/                 compliance spine, model verification, serve
-├── src/haven/
-│   ├── llm.py               tiered Nemotron client + per-tier usage logging
-│   ├── research.py          Tavily Search / Extract wrappers
-│   ├── models.py            pydantic models
-│   ├── pipeline.py          discover → extract → draft → track
-│   ├── evidence.py          host-side reader for OpenShell OCSF audit logs
-│   ├── api.py               FastAPI JSON API + dashboard
-│   └── seed.py              synthetic family generator
-├── tests/                   275 tests
-└── web/templates/           dashboard
-```
-
-The diagram is generated, not hand-drawn: `python docs/make_architecture_diagram.py`
-rewrites `docs/architecture.png`, so it can be regenerated when the architecture
-changes. Test modules are named for what they cover — `test_boundary.py` holds
-the boundary-artifact assertions, `test_pipeline.py` the end-to-end run, and the
-per-stage behaviour lives in `test_pipeline_discovery.py`,
-`test_pipeline_procedures.py`, `test_pipeline_transitions.py` and
-`test_pipeline_json.py`.
-
-## Licence
-
-MIT — see [LICENSE](LICENSE).

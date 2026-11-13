@@ -35,11 +35,13 @@ from __future__ import annotations
 import os
 import time
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal
 
 from openai import OpenAI
 
+from haven import privacy
 from haven.models import TierUsage
+from haven.offline import OfflineOpenAI, provider_mode
 
 # ── Endpoint configuration ─────────────────────────────────────────────
 
@@ -108,12 +110,19 @@ def clear_usage_log() -> None:
 
 # ── Client factory ─────────────────────────────────────────────────────
 
-_client: OpenAI | None = None
+_client: Any = None
 _client_base_url: str | None = None
 
 
-def _get_client() -> OpenAI:
+def _get_client() -> Any:
+    """Return the Token Factory client, or the offline stand-in.
+
+    The offline client is chosen only by ``haven.offline.provider_mode()``;
+    it is never a silent fallback after a live failure.
+    """
     global _client, _client_base_url
+    if provider_mode() == "offline":
+        return OfflineOpenAI()
     resolved = base_url()
     # Rebuild if the configured endpoint changed since the client was built.
     if _client is not None and _client_base_url != resolved:
@@ -175,10 +184,16 @@ def complete(
     Records token counts and latency in the usage log for the dashboard
     tier-usage chart.
 
+    The payload gate runs first: if *system* or *user* contains a protected
+    family term, :class:`haven.privacy.PayloadBlocked` is raised and no client
+    is constructed, so nothing is sent.
+
     Returns the assistant message content as a string.
     """
+    privacy.check("token_factory", system, user)
     model = model_for(tier)
     client = _get_client()
+    simulated = bool(getattr(client, "offline", False))
 
     start = time.perf_counter()
     response = client.chat.completions.create(
@@ -208,6 +223,7 @@ def complete(
             latency_ms=round(elapsed_ms, 1),
             purpose=purpose,
             timestamp=datetime.now(timezone.utc),
+            simulated=simulated,
         )
     )
 

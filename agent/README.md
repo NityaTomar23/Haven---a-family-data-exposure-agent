@@ -23,9 +23,9 @@ silently.
 
 | Stage | Pipeline function | Skill | Model tier |
 | --- | --- | --- | --- |
-| 1. Discover exposures | `discover_exposures()` | `discover_exposure` | nano (super to escalate one contested case) |
-| 2. Extract opt-out procedures | `extract_optout_procedures()` | `extract_optout_procedure` | nano to route, super to synthesize |
-| 3. Draft removal requests | `draft_removal_requests()` | `draft_removal_request` | super per draft, ultra only for strategy at 5+ sites |
+| 1. Inventory + local match | `discover_inventory()` + `match_local_listings()` | `discover_exposure` | nano (inventory classification only; matching is 100% local) |
+| 2. Extract opt-out procedures | `extract_optout_procedures()` | `extract_optout_procedure` | super (with `<untrusted_page_content>` isolation) |
+| 3. Strategy + draft requests | `synthesize_strategy()` + `draft_removal_requests()` | `draft_removal_request` | ultra at 5+ exposures for strategy; super for placeholder drafts |
 
 Tier ids come from `TIER_MODELS` in `src/haven/llm.py` and are routed to Nebius
 Token Factory. Hermes runs one main model per session, so set the tier per stage
@@ -113,9 +113,8 @@ Concretely, for every outbound removal request:
 - If asked to send, approve, or submit, the agent refuses and returns the draft
   for review.
 
-Supporting rules, enforced in every skill: high-sensitivity identifiers (per
-`Identifier.sensitivity` in `src/haven/models.py`) never leave the sandbox and
-are used only to match returned results; robots.txt and site terms are
-respected, and a site that forbids automated access gets a `manual_only`
-procedure instead; no credential stuffing and no bypassing logins or paywalls;
-no children's names or school details in any outbound content.
+Supporting rules, enforced in every skill and by `haven.privacy.check()`:
+* **Zero-PII outbound policy:** No family identifier (full name, surname, phone, email/local part, address, or `City, ST`), no listing URL, and no listing sentence leaves the host in Tavily queries or Token Factory prompts.
+* **Local exact matching only:** Matching against `haven.fixtures` happens 100% locally (`verified`, `candidate`, `rejected`).
+* **Adults-only synthetic scope:** No children's records or school identifiers exist in the shipped demo.
+* Respect robots.txt and site terms (`manual_only` when automated extraction is disallowed); no credential stuffing or bypassing logins/paywalls.

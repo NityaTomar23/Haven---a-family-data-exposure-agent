@@ -1,8 +1,19 @@
 """Synthetic family generator for Haven demos.
 
-Generates a deterministic fake family (2 adults, 2 children) with plausible
-addresses, phone numbers, and emails.  All data is completely synthetic.
-No real personal data is used or generated.
+The demo family is deterministic and unmistakably fictional:
+
+* surname ``Synthwell`` and the town ``Sampleville`` are invented;
+* emails use the reserved ``example.com`` domain (RFC 2606);
+* phone numbers use the reserved ``555-01xx`` fictional range;
+* the ZIP code ``00000`` is not assigned to any real place.
+
+The MVP scope is adults only. Children's names, schools and activities are
+deliberately absent: the model can describe a ``child`` role for a future,
+separately reviewed mode, but the demo never creates one.
+
+Identifiers here are used for LOCAL matching only. No identifier -- whatever
+its sensitivity label -- may be sent to Tavily, Token Factory or any other
+third party; ``haven.privacy`` enforces that.
 """
 
 from __future__ import annotations
@@ -12,77 +23,60 @@ from datetime import datetime, timezone
 
 from haven.models import Family, FamilyMember, Identifier
 
+LAST_NAME = "Synthwell"
+STREET = "100 Fictional Way"
+CITY = "Sampleville"
+STATE = "CA"
+ZIP_CODE = "00000"
+
 
 def generate_family(*, seed: int = 42) -> Family:
-    """Return a synthetic family for demo purposes.
+    """Return the synthetic demo family.
 
-    The data is deterministic for a given *seed* so that tests and demos
-    are reproducible.  The seed controls the ``family_id`` UUID.
+    Deterministic for a given *seed*; the seed controls only ``family_id``.
     """
     family_id = str(uuid.UUID(int=seed))
+    city_state = f"{CITY}, {STATE}"
 
-    last_name = "Castillo"
-    address = "742 Evergreen Terrace"
-    city = "Springfield"
-    state = "IL"
-    zip_code = "62704"
-
-    parent1 = FamilyMember(
-        first_name="Maria",
-        last_name=last_name,
+    avery = FamilyMember(
+        first_name="Avery",
+        last_name=LAST_NAME,
         role="parent",
-        age=38,
+        age=41,
         identifiers=[
-            Identifier(kind="name", value=f"Maria {last_name}", sensitivity="low"),
-            Identifier(kind="email", value="maria.castillo@example.com", sensitivity="high"),
-            Identifier(kind="phone", value="(217) 555-0142", sensitivity="high"),
-            Identifier(kind="city_state", value=f"{city}, {state}", sensitivity="low"),
-            Identifier(kind="address", value=f"{address}, {city}, {state} {zip_code}", sensitivity="high"),
+            Identifier(kind="name", value=f"Avery {LAST_NAME}", sensitivity="low"),
+            Identifier(kind="city_state", value=city_state, sensitivity="low"),
+            Identifier(kind="email", value="avery.synthwell@example.com", sensitivity="high"),
+            Identifier(kind="phone", value="(555) 555-0142", sensitivity="high"),
+            Identifier(
+                kind="address",
+                value=f"{STREET}, {CITY}, {STATE} {ZIP_CODE}",
+                sensitivity="high",
+            ),
         ],
     )
 
-    parent2 = FamilyMember(
-        first_name="Daniel",
-        last_name=last_name,
+    jordan = FamilyMember(
+        first_name="Jordan",
+        last_name=LAST_NAME,
         role="parent",
-        age=40,
+        age=43,
         identifiers=[
-            Identifier(kind="name", value=f"Daniel {last_name}", sensitivity="low"),
-            Identifier(kind="email", value="d.castillo@example.com", sensitivity="high"),
-            Identifier(kind="phone", value="(217) 555-0198", sensitivity="high"),
-            Identifier(kind="alias", value="Dan Castillo", sensitivity="low"),
-        ],
-    )
-
-    child1 = FamilyMember(
-        first_name="Sofia",
-        last_name=last_name,
-        role="child",
-        age=14,
-        identifiers=[
-            Identifier(kind="name", value=f"Sofia {last_name}", sensitivity="high"),
-            Identifier(kind="school", value="Lincoln Middle School", sensitivity="high"),
-        ],
-    )
-
-    child2 = FamilyMember(
-        first_name="Lucas",
-        last_name=last_name,
-        role="child",
-        age=10,
-        identifiers=[
-            Identifier(kind="name", value=f"Lucas {last_name}", sensitivity="high"),
-            Identifier(kind="school", value="Washington Elementary", sensitivity="high"),
+            Identifier(kind="name", value=f"Jordan {LAST_NAME}", sensitivity="low"),
+            Identifier(kind="alias", value=f"Jordy {LAST_NAME}", sensitivity="low"),
+            Identifier(kind="city_state", value=city_state, sensitivity="low"),
+            Identifier(kind="email", value="jordan.synthwell@example.com", sensitivity="high"),
+            Identifier(kind="phone", value="(555) 555-0198", sensitivity="high"),
         ],
     )
 
     return Family(
         family_id=family_id,
-        members=[parent1, parent2, child1, child2],
-        address=address,
-        city=city,
-        state=state,
-        zip_code=zip_code,
+        members=[avery, jordan],
+        address=STREET,
+        city=CITY,
+        state=STATE,
+        zip_code=ZIP_CODE,
         created_at=datetime.now(timezone.utc),
     )
 
@@ -96,11 +90,10 @@ def get_all_identifiers(family: Family) -> list[Identifier]:
 
 
 def get_search_identifiers(family: Family) -> list[Identifier]:
-    """Return only the low-sensitivity identifiers safe for web searches.
+    """Low-sensitivity identifiers, for LOCAL display and matching only.
 
-    High-sensitivity identifiers (emails, phones, addresses, children's
-    names/schools) are used only for *matching* results returned by the
-    search, never sent as search queries themselves.
+    Kept for API compatibility. Since the identifier-free redesign no
+    identifier is ever used to build an outbound query; the name is historical.
     """
     return [i for i in get_all_identifiers(family) if i.sensitivity == "low"]
 
@@ -108,16 +101,12 @@ def get_search_identifiers(family: Family) -> list[Identifier]:
 def redact_high_sensitivity(family: Family) -> Family:
     """Return a deep copy with every high-sensitivity identifier value hidden.
 
-    The dashboard template already redacts these values, and the JSON API
-    should not hand out what the UI it feeds refuses to show. The hosted demo
-    URL required by the hackathon is public, so the default must be the
-    redacted view even though the seed data is synthetic.
-
-    Only ``Identifier.value`` is touched: a member's name is a display
-    concern, not an identifier, and the local operator console is not an
-    egress path.
+    The dashboard redacts these values, and the JSON API should not hand out
+    what the UI it feeds refuses to show. The hosted demo URL is public, so
+    the default is the redacted view even though the seed data is synthetic.
     """
     clone = family.model_copy(deep=True)
+    clone.address = "[REDACTED]"
     for member in clone.members:
         for identifier in member.identifiers:
             if identifier.sensitivity == "high":

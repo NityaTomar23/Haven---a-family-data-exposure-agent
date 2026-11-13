@@ -56,6 +56,7 @@ def tavily(monkeypatch):
         extract_response: dict[str, Any] | None = None,
         api_key: str | None = "test-tavily-key",
     ) -> FakeTavilyClient:
+        monkeypatch.setenv("HAVEN_PROVIDER_MODE", "live")
         monkeypatch.setattr(research, "_get_client", _REAL_GET_CLIENT)
         if api_key is None:
             monkeypatch.delenv("TAVILY_API_KEY", raising=False)
@@ -154,12 +155,22 @@ def test_search_brokers_tolerates_a_response_without_results(tavily):
 
 
 def test_search_brokers_passes_the_query_through_unchanged(tavily):
-    """The wrapper must not rewrite the query: the caller owns redaction."""
+    """The wrapper must not rewrite generic queries."""
     client = tavily(search_response={"results": []})
 
-    research.search_brokers('"Maria Castillo" people search')
+    research.search_brokers("data broker opt-out procedure")
 
-    assert client.search_calls[0][0] == '"Maria Castillo" people search'
+    assert client.search_calls[0][0] == "data broker opt-out procedure"
+
+
+def test_search_inventory_issues_fixed_generic_queries(tavily):
+    client = tavily(search_response={"results": []})
+
+    research.search_inventory(max_results=4)
+
+    assert len(client.search_calls) == len(research.INVENTORY_QUERIES)
+    assert [q for q, _ in client.search_calls] == list(research.INVENTORY_QUERIES)
+    assert all(kw["max_results"] == 4 for _, kw in client.search_calls)
 
 
 # ── Opt-out procedure search ───────────────────────────────────────────
@@ -234,6 +245,7 @@ def test_extract_pages_tolerates_a_response_without_results(tavily):
 def test_search_does_not_swallow_sdk_failures(monkeypatch):
     """A 429 from Tavily is an operator problem and must surface, not be
     silently converted into an empty result set."""
+    monkeypatch.setenv("HAVEN_PROVIDER_MODE", "live")
     monkeypatch.setattr(research, "_get_client", _REAL_GET_CLIENT)
     monkeypatch.setenv("TAVILY_API_KEY", "test-tavily-key")
 

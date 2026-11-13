@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Haven — Family Data-Exposure Agent</title>
-    <meta name="description" content="Haven finds where your family's personal data is publicly exposed and drives the removal.">
+    <meta name="description" content="Haven identifies candidate public exposure listings, verifies matches locally, and prepares removal drafts for human review.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -58,6 +58,16 @@
             display: flex; align-items: center; justify-content: center;
             font-size: 1.2rem;
         }
+        .header-controls {
+            display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        }
+        .mode-pill {
+            font-size: 0.75rem; font-weight: 600; padding: 6px 12px;
+            border-radius: 20px; border: 1px solid var(--border);
+        }
+        .mode-pill.offline { background: var(--yellow-dim); color: var(--yellow); border-color: rgba(255,217,61,0.35); }
+        .mode-pill.live { background: var(--green-dim); color: var(--green); border-color: rgba(0,214,143,0.35); }
+
         .scan-btn {
             background: linear-gradient(135deg, var(--accent), #a29bfe);
             color: white; border: none; padding: 12px 28px;
@@ -65,27 +75,52 @@
             cursor: pointer; transition: all 0.3s;
             box-shadow: 0 4px 15px var(--accent-glow);
         }
-        .scan-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 25px var(--accent-glow); }
-        .scan-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .scan-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 25px var(--accent-glow); }
+        .scan-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+        /* ── Consent Banner ─────────────────────── */
+        .consent-panel {
+            margin-top: 24px;
+            background: rgba(108, 92, 231, 0.08);
+            border: 1px solid rgba(108, 92, 231, 0.35);
+            border-radius: var(--radius);
+            padding: 18px 22px;
+            font-size: 0.85rem;
+        }
+        .consent-panel h3 {
+            font-size: 0.9rem; font-weight: 700; margin-bottom: 8px;
+            color: #c7c1ff;
+        }
+        .consent-details {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px; margin-bottom: 12px; color: var(--text-dim);
+        }
+        .consent-details strong { color: var(--text); }
+        .consent-check {
+            display: flex; align-items: center; gap: 10px;
+            font-weight: 600; color: var(--text); cursor: pointer;
+        }
+        .consent-check input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
 
         /* ── Summary Cards ──────────────────────── */
         .summary-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 20px; padding: 32px 0 24px;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px; padding: 24px 0;
         }
         .summary-card {
             background: var(--bg-card);
             border: 1px solid var(--border);
             border-radius: var(--radius);
-            padding: 24px;
+            padding: 20px;
             transition: all 0.3s;
         }
         .summary-card:hover { border-color: var(--accent); box-shadow: var(--shadow); }
-        .summary-card .label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); margin-bottom: 8px; }
-        .summary-card .value { font-size: 2.2rem; font-weight: 800; letter-spacing: -0.03em; }
-        .summary-card.exposures .value { color: var(--red); }
-        .summary-card.sent .value { color: var(--yellow); }
+        .summary-card .label { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); margin-bottom: 6px; }
+        .summary-card .value { font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; }
+        .summary-card.verified .value { color: var(--red); }
+        .summary-card.candidates .value { color: var(--yellow); }
+        .summary-card.sent .value { color: #a29bfe; }
         .summary-card.confirmed .value { color: var(--green); }
         .summary-card.pending .value { color: var(--blue); }
 
@@ -98,18 +133,19 @@
             overflow: hidden;
         }
         .section-header {
-            padding: 20px 24px;
+            padding: 18px 24px;
             border-bottom: 1px solid var(--border);
-            display: flex; align-items: center; gap: 12px;
+            display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
         }
-        .section-header h2 { font-size: 1.1rem; font-weight: 700; }
+        .section-header .title-wrap { display: flex; align-items: center; gap: 12px; }
+        .section-header h2 { font-size: 1.08rem; font-weight: 700; }
         .section-header .badge {
-            font-size: 0.75rem; font-weight: 600;
+            font-size: 0.74rem; font-weight: 600;
             padding: 3px 10px; border-radius: 20px;
         }
         .section-body { padding: 24px; }
 
-        /* ── Family Panel ───────────────────────── */
+        /* ── Family & Inventory ─────────────────── */
         .family-grid {
             display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
             gap: 16px;
@@ -130,6 +166,21 @@
         .member-card .ids span { display: block; margin: 2px 0; }
         .id-kind { color: var(--accent); font-weight: 500; }
         .id-redacted { color: var(--red); font-style: italic; }
+
+        .inventory-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 12px;
+        }
+        .inventory-card {
+            background: var(--bg); border: 1px solid var(--border);
+            border-radius: 8px; padding: 14px; font-size: 0.84rem;
+        }
+        .coverage-badge {
+            font-size: 0.7rem; font-weight: 600; padding: 2px 8px;
+            border-radius: 6px; display: inline-block; margin-top: 6px;
+        }
+        .coverage-badge.local_fixture { background: var(--green-dim); color: var(--green); }
+        .coverage-badge.manual_only { background: var(--yellow-dim); color: var(--yellow); }
 
         /* ── Exposure Table ──────────────────────── */
         .exposure-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
@@ -152,11 +203,18 @@
         }
         .broker-badge.people_search { background: var(--red-dim); color: var(--red); }
         .broker-badge.data_broker { background: var(--yellow-dim); color: var(--yellow); }
-        .broker-badge.breach_dump { background: rgba(255,107,107,0.25); color: #ff8a8a; }
         .broker-badge.social { background: var(--blue-dim); color: var(--blue); }
         .broker-badge.other { background: rgba(139,143,163,0.2); color: var(--text-dim); }
+        .match-badge.verified { background: var(--green-dim); color: var(--green); }
+        .match-badge.candidate { background: var(--yellow-dim); color: var(--yellow); }
+        .match-badge.rejected { background: var(--red-dim); color: var(--red); }
 
-        /* ── Action Cards ───────────────────────── */
+        /* ── Strategy & Action Cards ────────────── */
+        .strategy-box {
+            background: var(--bg); border: 1px solid var(--border);
+            border-radius: 10px; padding: 18px; white-space: pre-wrap;
+            font-size: 0.88rem; line-height: 1.7;
+        }
         .action-list { display: flex; flex-direction: column; gap: 16px; }
         .action-card {
             background: var(--bg); border: 1px solid var(--border);
@@ -164,9 +222,13 @@
         }
         .action-card .action-header {
             display: flex; align-items: center; justify-content: space-between;
-            margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
+            margin-bottom: 10px; flex-wrap: wrap; gap: 8px;
         }
         .action-card .site-name { font-weight: 700; font-size: 1rem; }
+        .action-meta {
+            font-size: 0.78rem; color: var(--text-dim); margin-bottom: 10px;
+            display: flex; flex-wrap: wrap; gap: 12px;
+        }
         .status-badge {
             font-size: 0.72rem; font-weight: 600; padding: 4px 12px;
             border-radius: 20px; text-transform: uppercase; letter-spacing: 0.05em;
@@ -180,10 +242,10 @@
         .draft-content {
             background: rgba(0,0,0,0.3); border-radius: 8px; padding: 16px;
             font-size: 0.85rem; line-height: 1.7; white-space: pre-wrap;
-            max-height: 200px; overflow-y: auto; margin-bottom: 12px;
+            max-height: 220px; overflow-y: auto; margin-bottom: 12px;
             border: 1px solid var(--border);
         }
-        .action-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+        .action-buttons { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
         .action-buttons button {
             padding: 8px 16px; border-radius: 8px; font-size: 0.82rem;
             font-weight: 600; border: 1px solid var(--border);
@@ -202,9 +264,18 @@
             border: 1px solid rgba(0,214,143,0.3);
             border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;
             font-size: 0.82rem; color: var(--green);
-            display: flex; align-items: center; gap: 8px;
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
         }
-        .evidence-source::before { content: '🔒'; }
+        .evidence-source.simulated {
+            background: var(--yellow-dim);
+            border-color: rgba(255,217,61,0.35);
+            color: var(--yellow);
+        }
+        .evidence-source.unavailable {
+            background: rgba(139,143,163,0.12);
+            border-color: var(--border);
+            color: var(--text-dim);
+        }
         .egress-grid {
             display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
             gap: 12px;
@@ -227,7 +298,7 @@
             border-radius: 10px; padding: 20px;
         }
         .tier-name { font-weight: 700; font-size: 0.95rem; margin-bottom: 4px; }
-        .tier-model { font-size: 0.75rem; color: var(--text-dim); margin-bottom: 12px; }
+        .tier-model { font-size: 0.75rem; color: var(--text-dim); margin-bottom: 12px; word-break: break-all; }
         .tier-stat { display: flex; justify-content: space-between; font-size: 0.82rem; margin: 6px 0; }
         .tier-stat .stat-label { color: var(--text-dim); }
         .tier-stat .stat-value { font-weight: 600; }
@@ -243,10 +314,10 @@
 
         /* ── Empty States ───────────────────────── */
         .empty-state {
-            text-align: center; padding: 48px 24px;
-            color: var(--text-dim); font-size: 0.95rem;
+            text-align: center; padding: 40px 24px;
+            color: var(--text-dim); font-size: 0.92rem;
         }
-        .empty-state .icon { font-size: 3rem; margin-bottom: 12px; opacity: 0.5; }
+        .empty-state .icon { font-size: 2.5rem; margin-bottom: 10px; opacity: 0.5; }
 
         /* ── Footer ─────────────────────────────── */
         footer {
@@ -262,30 +333,26 @@
             justify-content: center; align-items: center;
         }
         .loading-overlay.active { display: flex; }
-        .loading-spinner {
-            text-align: center; color: var(--text);
-        }
+        .loading-spinner { text-align: center; color: var(--text); }
         .loading-spinner .dots { font-size: 2rem; margin-bottom: 12px; }
         @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
         .loading-spinner .dots span { animation: pulse 1.5s infinite; }
         .loading-spinner .dots span:nth-child(2) { animation-delay: 0.3s; }
         .loading-spinner .dots span:nth-child(3) { animation-delay: 0.6s; }
 
-        /* ── Responsive ─────────────────────────── */
         @media (max-width: 768px) {
             .summary-grid { grid-template-columns: repeat(2, 1fr); }
-            .summary-card .value { font-size: 1.8rem; }
+            .summary-card .value { font-size: 1.7rem; }
         }
     </style>
 </head>
 <body>
-    <!-- Loading overlay -->
     <div class="loading-overlay" id="loading">
         <div class="loading-spinner">
             <div class="dots"><span>●</span><span>●</span><span>●</span></div>
-            <p>Scanning for data exposure…</p>
+            <p>Running privacy-gated exposure workflow…</p>
             <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 8px;">
-                Searching brokers • Extracting procedures • Drafting requests
+                Identifier-free broker research • Local fixture matching • Placeholder drafts
             </p>
         </div>
     </div>
@@ -296,24 +363,59 @@
                 <div class="logo-icon">🛡️</div>
                 <div>
                     <div>Haven</div>
-                    <div style="font-size: 0.7rem; font-weight: 400; color: var(--text-dim);">Family Data-Exposure Agent</div>
+                    <div style="font-size: 0.72rem; font-weight: 400; color: var(--text-dim);">
+                        Privacy-First Family Data-Exposure Agent
+                    </div>
                 </div>
             </div>
-            <button class="scan-btn" id="scanBtn" onclick="startScan()">
-                🔍 Scan for Exposure
-            </button>
+            <div class="header-controls">
+                {% if provider_mode == "offline" %}
+                <span class="mode-pill offline">Offline Demo (simulated providers)</span>
+                {% else %}
+                <span class="mode-pill live">Live Providers (Token Factory + Tavily)</span>
+                {% endif %}
+                <button class="scan-btn" id="scanBtn" onclick="startScan()" disabled title="Review and confirm consent below before scanning">
+                    🔍 Scan for Exposure
+                </button>
+            </div>
         </div>
     </header>
 
     <main class="container">
-        <!-- Summary Cards -->
+        <!-- Pre-Scan Disclosure & Explicit Consent -->
+        <div class="consent-panel">
+            <h3>External Research Disclosure &amp; Consent (Synthetic Demo Mode Only · Rate limit: {{ scan_rate_limit }}/hr)</h3>
+            <div class="consent-details">
+                <div>
+                    <strong>External Destinations:</strong><br>
+                    <code>api.tavily.com</code> (generic Search &amp; Extract)<br>
+                    <code>{{ token_factory_host }}</code> (Nemotron 3 Nano / Super / Ultra)
+                    {% if provider_mode == "offline" %}<br><em>Currently running in offline simulated mode (no keys configured).</em>{% endif %}
+                </div>
+                <div>
+                    <strong>Categories of Data Sent:</strong><br>
+                    Generic broker inventory queries, public broker company names, and public opt-out page text only.<br>
+                    <strong>Never sent:</strong> Family names, emails, phones, addresses, children's data, or local listing URLs.
+                </div>
+            </div>
+            <label class="consent-check">
+                <input type="checkbox" id="scanConsent" onchange="document.getElementById('scanBtn').disabled = !this.checked">
+                <span>I understand the destinations and data categories above and consent to run the synthetic demo scan.</span>
+            </label>
+        </div>
+
+        <!-- Summary Cards (separating verified, candidate, sent, confirmed, pending) -->
         <div class="summary-grid">
-            <div class="summary-card exposures">
-                <div class="label">Exposures Found</div>
-                <div class="value">{{ n_exposures }}</div>
+            <div class="summary-card verified">
+                <div class="label">Verified Matches</div>
+                <div class="value">{{ n_verified }}</div>
+            </div>
+            <div class="summary-card candidates">
+                <div class="label">Candidate Listings</div>
+                <div class="value">{{ n_candidate }}</div>
             </div>
             <div class="summary-card sent">
-                <div class="label">Requests Sent</div>
+                <div class="label">User-Marked Sent</div>
                 <div class="value">{{ n_sent }}</div>
             </div>
             <div class="summary-card confirmed">
@@ -321,7 +423,7 @@
                 <div class="value">{{ n_confirmed }}</div>
             </div>
             <div class="summary-card pending">
-                <div class="label">Pending</div>
+                <div class="label">Pending Review</div>
                 <div class="value">{{ n_pending }}</div>
             </div>
         </div>
@@ -329,8 +431,10 @@
         <!-- Family Panel -->
         <div class="section">
             <div class="section-header">
-                <h2>👨‍👩‍👧‍👦 Synthetic Family</h2>
-                <span class="badge" style="background: var(--accent-glow); color: var(--accent);">Demo data only</span>
+                <div class="title-wrap">
+                    <h2>👨‍👩‍👧‍👦 Synthetic Family (Adults-Only MVP)</h2>
+                    <span class="badge" style="background: var(--accent-glow); color: var(--accent);">Synthetic data only · Local matching</span>
+                </div>
             </div>
             <div class="section-body">
                 <div class="family-grid">
@@ -356,11 +460,47 @@
             </div>
         </div>
 
+        <!-- Generic Broker Inventory & Coverage Disclosure -->
+        <div class="section">
+            <div class="section-header">
+                <div class="title-wrap">
+                    <h2>🌐 Broker Inventory (Identifier-Free Tavily Research)</h2>
+                    <span class="badge" style="background: var(--blue-dim); color: var(--blue);">{{ state.inventory|length }} brokers</span>
+                </div>
+            </div>
+            <div class="section-body">
+                {% if state.inventory %}
+                <p style="font-size: 0.82rem; color: var(--text-dim); margin-bottom: 14px;">
+                    Coverage disclosure: sites marked <strong>manual only</strong> require submitting a family identifier to check for a profile, so Haven never queries them automatically under the no-external-identifiers guarantee.
+                </p>
+                <div class="inventory-grid">
+                    {% for broker in state.inventory %}
+                    <div class="inventory-card">
+                        <strong>{{ broker.name }}</strong>
+                        <div style="font-size: 0.76rem; color: var(--text-dim); margin-top: 2px;">
+                            {{ broker.broker_type|replace("_"," ") }} · confidence {{ (broker.confidence * 100)|round(0)|int }}%
+                        </div>
+                        <span class="coverage-badge {{ broker.coverage }}">
+                            {% if broker.coverage == "local_fixture" %}local synthetic fixture{% else %}manual only (coverage limit){% endif %}
+                        </span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state" style="padding: 24px;">
+                    <p>No broker inventory researched yet. Confirm consent and run a scan.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
         <!-- Exposure Board -->
         <div class="section">
             <div class="section-header">
-                <h2>🔍 Exposure Board</h2>
-                <span class="badge" style="background: var(--red-dim); color: var(--red);">{{ n_exposures }} found</span>
+                <div class="title-wrap">
+                    <h2>🔍 Exposure Board (Local Exact Matching)</h2>
+                    <span class="badge" style="background: var(--red-dim); color: var(--red);">{{ n_verified }} verified · {{ n_candidate }} candidate · {{ n_rejected }} rejected</span>
+                </div>
             </div>
             <div class="section-body">
                 {% if state.exposures %}
@@ -370,9 +510,10 @@
                             <tr>
                                 <th>Site</th>
                                 <th>Type</th>
-                                <th>Confidence</th>
-                                <th>Evidence</th>
-                                <th>URL</th>
+                                <th>Match Status</th>
+                                <th>Local Confidence</th>
+                                <th>Redacted Match Evidence</th>
+                                <th>Fixture URL</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -380,12 +521,13 @@
                             <tr>
                                 <td><strong>{{ exp.source_name }}</strong></td>
                                 <td><span class="broker-badge {{ exp.broker_type }}">{{ exp.broker_type|replace("_"," ") }}</span></td>
+                                <td><span class="broker-badge match-badge {{ exp.match_status }}">{{ exp.match_status }}</span></td>
                                 <td>
                                     <div class="confidence-bar" style="width: {{ (exp.confidence * 100)|int }}px;" title="{{ (exp.confidence * 100)|round(1) }}%"></div>
                                     <span style="font-size: 0.75rem; color: var(--text-dim); margin-left: 6px;">{{ (exp.confidence * 100)|round(1) }}%</span>
                                 </td>
-                                <td style="max-width: 300px; font-size: 0.82rem; color: var(--text-dim);">{{ exp.evidence_snippet[:120] }}{% if exp.evidence_snippet|length > 120 %}…{% endif %}</td>
-                                <td><a href="{{ exp.source_url }}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none; font-size: 0.82rem;">View ↗</a></td>
+                                <td style="max-width: 340px; font-size: 0.82rem; color: var(--text-dim);">{{ exp.evidence_snippet }}</td>
+                                <td><span style="font-size: 0.78rem; color: var(--accent);">{{ exp.source_url }}</span></td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -394,17 +536,34 @@
                 {% else %}
                 <div class="empty-state">
                     <div class="icon">🔍</div>
-                    <p>No exposures found yet. Click <strong>Scan for Exposure</strong> to start.</p>
+                    <p>No local fixture matches evaluated yet. Confirm consent and click <strong>Scan for Exposure</strong>.</p>
                 </div>
                 {% endif %}
             </div>
         </div>
 
+        {% if state.strategy %}
+        <!-- Ultra-Tier Multi-Site Strategy -->
+        <div class="section">
+            <div class="section-header">
+                <div class="title-wrap">
+                    <h2>🧠 Multi-Site Removal Strategy (Ultra Tier)</h2>
+                    <span class="badge" style="background: rgba(108,92,231,0.2); color: #a29bfe;">Identifier-free plan</span>
+                </div>
+            </div>
+            <div class="section-body">
+                <div class="strategy-box">{{ state.strategy }}</div>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Action Tracker -->
         <div class="section">
             <div class="section-header">
-                <h2>📋 Removal Actions</h2>
-                <span class="badge" style="background: var(--yellow-dim); color: var(--yellow);">{{ state.actions|length }} drafts</span>
+                <div class="title-wrap">
+                    <h2>📋 Removal Actions (Drafts Only — Human Sends Manually)</h2>
+                    <span class="badge" style="background: var(--yellow-dim); color: var(--yellow);">{{ state.actions|length }} drafts</span>
+                </div>
             </div>
             <div class="section-body">
                 {% if state.actions %}
@@ -416,19 +575,33 @@
                                 {% for exp in state.exposures if exp.id == action.exposure_id %}
                                 {{ exp.source_name }}
                                 {% endfor %}
+                                <span style="font-size: 0.76rem; color: var(--text-dim); font-weight: 400;">({{ action.id }})</span>
                             </span>
                             <span class="status-badge {{ action.status }}">{{ action.status|replace("_"," ") }}</span>
                         </div>
-                        <div style="font-size: 0.78rem; color: var(--text-dim); margin-bottom: 8px;">
-                            Method: {{ action.procedure.method|replace("_"," ") }} ·
-                            Model: {{ action.drafted_model.split("/")|last }}
+                        <div class="action-meta">
+                            <span>Method: <strong>{{ action.procedure.method|replace("_"," ") }}</strong></span>
+                            <span>Model: <strong>{{ action.drafted_model.split("/")|last }}</strong></span>
+                            <span>Procedure source: <a href="{{ action.procedure.source_url }}" target="_blank" rel="noopener" style="color: var(--accent);">{{ action.procedure.source_url }}</a></span>
+                            {% if action.procedure.statutory_deadline_days %}
+                            <span style="color: var(--green);">Statutory deadline: {{ action.procedure.statutory_deadline_days }}d ({{ action.procedure.jurisdiction }})</span>
+                            {% elif action.procedure.service_target_days %}
+                            <span>Site service target (non-statutory): {{ action.procedure.service_target_days }}d</span>
+                            {% else %}
+                            <span>Statutory deadline: unrecorded</span>
+                            {% endif %}
                         </div>
+                        {% if action.procedure.required_evidence %}
+                        <div style="font-size: 0.78rem; color: var(--text-dim); margin-bottom: 10px;">
+                            Required: {{ action.procedure.required_evidence|join(", ") }}
+                        </div>
+                        {% endif %}
                         <div class="draft-content">{{ action.draft }}</div>
                         <div class="action-buttons">
                             {% if action.status == "drafted" %}
-                            <button class="btn-approve" onclick="updateAction('{{ action.id }}', 'approve')">✓ Approve</button>
+                            <button class="btn-approve" onclick="updateAction('{{ action.id }}', 'approve')">✓ Approve Draft</button>
                             {% elif action.status == "approved" %}
-                            <button class="btn-sent" onclick="updateAction('{{ action.id }}', 'sent')">📤 Mark as Sent</button>
+                            <button class="btn-sent" onclick="updateAction('{{ action.id }}', 'sent')">📤 Mark as Sent (Human Attested)</button>
                             {% elif action.status == "sent" %}
                             <button class="btn-confirm" onclick="updateAction('{{ action.id }}', 'confirm')">✅ Confirm Removed</button>
                             {% endif %}
@@ -448,14 +621,26 @@
         <!-- Evidence Panel (the money shot) -->
         <div class="section">
             <div class="section-header">
-                <h2>🔒 Data That Left This Machine</h2>
-                <span class="badge" style="background: var(--green-dim); color: var(--green);">Enforcement layer</span>
+                <div class="title-wrap">
+                    <h2>🔒 Data That Left This Machine</h2>
+                    {% if evidence_status == "real" %}
+                    <span class="badge" style="background: var(--green-dim); color: var(--green);">Enforcement layer · REAL OCSF LOGS</span>
+                    {% elif evidence_status == "simulated" %}
+                    <span class="badge" style="background: var(--yellow-dim); color: var(--yellow);">SIMULATED RECORDS</span>
+                    {% else %}
+                    <span class="badge" style="background: rgba(139,143,163,0.2); color: var(--text-dim);">UNAVAILABLE</span>
+                    {% endif %}
+                </div>
             </div>
             <div class="section-body">
-                <div class="evidence-source">
-                    Source: <strong>OpenShell OCSF audit logs</strong> — this data comes from the
-                    enforcement layer, NOT from the agent. The agent cannot fabricate or suppress
-                    these records.
+                <div class="evidence-source {{ evidence_status }}">
+                    {% if evidence_status == "real" %}
+                    <span>🔒 Source: <strong>OpenShell OCSF audit logs</strong> — recorded by the enforcement layer, NOT from the agent. Shows destinations and decisions only (not request-body contents).</span>
+                    {% elif evidence_status == "simulated" %}
+                    <span>⚠ Status: <strong>SIMULATED</strong> — these records are development fixtures, not live OpenShell sandbox logs. Shows destinations and decisions only (not request-body contents).</span>
+                    {% else %}
+                    <span>⚠ Status: <strong>UNAVAILABLE</strong> — no OpenShell OCSF audit log is present on this host. Data originates from the enforcement layer, NOT from the agent; deploy on Linux + OpenShell to record real network decisions.</span>
+                    {% endif %}
                 </div>
                 {% if egress_summary.destinations %}
                 <div style="margin-bottom: 16px; font-size: 0.88rem;">
@@ -468,8 +653,8 @@
                         <div class="host">{{ dest.host }}</div>
                         <div class="counts">
                             <span class="allowed">✓ {{ dest.allowed }}</span> ·
-                            <span class="denied">✗ {{ dest.denied }}</span> ·
-                            {{ dest.bytes_out }} bytes
+                            <span class="denied">✗ {{ dest.denied }}</span>
+                            {% if dest.bytes_out %} · {{ dest.bytes_out }} bytes{% endif %}
                         </div>
                         {% if dest.policies %}
                         <div class="policy">Policy: {{ dest.policies|join(", ") }}</div>
@@ -478,11 +663,8 @@
                     {% endfor %}
                 </div>
                 {% else %}
-                <div class="empty-state" style="padding: 24px;">
-                    <p>No egress records yet. In production, OpenShell audit logs populate this panel automatically.</p>
-                    <p style="font-size: 0.82rem; color: var(--text-dim); margin-top: 8px;">
-                        Run on Linux with OpenShell to see real enforcement data.
-                    </p>
+                <div class="empty-state" style="padding: 20px;">
+                    <p>No egress records available yet. Run inside an OpenShell sandbox with OCSF JSON export enabled to populate enforcement records.</p>
                 </div>
                 {% endif %}
             </div>
@@ -491,8 +673,10 @@
         <!-- Tier Usage Chart -->
         <div class="section">
             <div class="section-header">
-                <h2>📊 Model Tier Usage</h2>
-                <span class="badge" style="background: rgba(108,92,231,0.2); color: var(--accent);">Tiered inference</span>
+                <div class="title-wrap">
+                    <h2>📊 Model Tier Usage</h2>
+                    <span class="badge" style="background: rgba(108,92,231,0.2); color: var(--accent);">Nemotron 3 Tiered Inference</span>
+                </div>
             </div>
             <div class="section-body">
                 {% if tier_usage %}
@@ -506,14 +690,17 @@
                     {% set tier_stats = {} %}
                     {% for u in tier_usage %}
                         {% if u.tier not in tier_stats %}
-                            {% set _ = tier_stats.update({u.tier: {"model": u.model, "in": 0, "out": 0, "calls": 0, "latency": 0}}) %}
+                            {% set _ = tier_stats.update({u.tier: {"model": u.model, "in": 0, "out": 0, "calls": 0, "latency": 0, "sim": u.simulated}}) %}
                         {% endif %}
                         {% set s = tier_stats[u.tier] %}
-                        {% set _ = s.update({"in": s["in"] + u.input_tokens, "out": s["out"] + u.output_tokens, "calls": s["calls"] + 1, "latency": s["latency"] + u.latency_ms}) %}
+                        {% set _ = s.update({"in": s["in"] + u.input_tokens, "out": s["out"] + u.output_tokens, "calls": s["calls"] + 1, "latency": s["latency"] + u.latency_ms, "sim": s["sim"] or u.simulated}) %}
                     {% endfor %}
                     {% for tier_name, stats in tier_stats.items() %}
                     <div class="tier-bar-container">
-                        <div class="tier-name">{{ tier_name|upper }}</div>
+                        <div class="tier-name">
+                            {{ tier_name|upper }}
+                            {% if stats.sim %}<span style="font-size: 0.7rem; color: var(--yellow); font-weight: 500;"> (simulated)</span>{% endif %}
+                        </div>
                         <div class="tier-model">{{ stats.model }}</div>
                         <div class="tier-stat">
                             <span class="stat-label">Calls</span>
@@ -540,7 +727,7 @@
                 {% else %}
                 <div class="empty-state" style="padding: 24px;">
                     <div class="icon">📊</div>
-                    <p>No model calls recorded yet. Run a scan to see tier usage.</p>
+                    <p>No model calls recorded yet. Confirm consent and run a scan to see tier usage.</p>
                 </div>
                 {% endif %}
             </div>
@@ -550,12 +737,17 @@
     <footer>
         <div class="container">
             <p>Haven — Family Data-Exposure Agent · Nebius × NVIDIA Global AI Hackathon</p>
-            <p style="margin-top: 4px;">All data is synthetic. No real personal data is used. MIT License.</p>
+            <p style="margin-top: 4px;">Synthetic adults-only demo data. No automated submissions. MIT License.</p>
         </div>
     </footer>
 
     <script>
         async function startScan() {
+            const consentBox = document.getElementById('scanConsent');
+            if (!consentBox || !consentBox.checked) {
+                alert('Please confirm external provider consent before scanning.');
+                return;
+            }
             const btn = document.getElementById('scanBtn');
             const loading = document.getElementById('loading');
             btn.disabled = true;
@@ -563,7 +755,11 @@
             loading.classList.add('active');
 
             try {
-                const res = await fetch('/api/scan', { method: 'POST' });
+                const res = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ consent: true })
+                });
                 const data = await res.json();
                 if (res.ok) {
                     window.location.reload();
@@ -573,7 +769,7 @@
             } catch (err) {
                 alert('Network error: ' + err.message);
             } finally {
-                btn.disabled = false;
+                btn.disabled = !consentBox.checked;
                 btn.textContent = '🔍 Scan for Exposure';
                 loading.classList.remove('active');
             }

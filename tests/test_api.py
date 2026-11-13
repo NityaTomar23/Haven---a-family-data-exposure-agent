@@ -1,4 +1,4 @@
-"""The FastAPI surface: JSON endpoints, the dashboard, and the human gates."""
+"""The FastAPI surface: JSON endpoints, the dashboard, consent/rate gates, and human gates."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import pytest
 
 from haven import api, llm
-from haven.models import PipelineState, TierUsage
+from haven.models import BrokerInventoryEntry, PipelineState, TierUsage
 
 from conftest import make_action, make_exposure, make_procedure
 
@@ -19,9 +19,20 @@ def _state_with_one_action(family):
     action = make_action(exposure, procedure)
     return PipelineState(
         family=family,
+        inventory=[
+            BrokerInventoryEntry(
+                name="Spokeo",
+                broker_type="people_search",
+                source_url="https://www.spokeo.com",
+                confidence=0.92,
+                coverage="local_fixture",
+            )
+        ],
         exposures=[exposure],
         procedures=[procedure],
+        strategy="Prioritize Spokeo first.",
         actions=[action],
+        provider_mode="live",
     )
 
 
@@ -35,19 +46,24 @@ def test_health(client):
     body = response.json()
     assert body["status"] == "ok"
     assert body["version"] == "0.1.0"
+    assert body["provider_mode"] in ("live", "offline")
     assert "timestamp" in body
 
 
-def test_family_endpoint_returns_the_synthetic_family(client):
+def test_family_endpoint_returns_the_adult_synthetic_family(client):
     body = client.get("/api/family").json()
 
-    assert len(body["members"]) == 4
-    assert body["city"] == "Springfield"
+    assert len(body["members"]) == 2
+    assert body["city"] == "Sampleville"
+    assert body["state"] == "CA"
+    assert all(m["role"] != "child" for m in body["members"])
 
 
-def test_exposures_and_actions_start_empty(client):
+def test_exposures_actions_inventory_and_strategy_start_empty(client):
+    assert client.get("/api/inventory").json() == []
     assert client.get("/api/exposures").json() == []
     assert client.get("/api/actions").json() == []
+    assert client.get("/api/strategy").json() == {"strategy": None}
 
 
 def test_dashboard_renders_with_no_data(client):
@@ -56,9 +72,11 @@ def test_dashboard_renders_with_no_data(client):
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     assert "Haven" in response.text
+    assert "Verified Matches" in response.text
+    assert "Candidate Listings" in response.text
 
 
-def test_dashboard_renders_exposures_and_actions(client, family):
+def test_dashboard_renders_exposures_strategy_and_actions(client, family):
     api._set_state(_state_with_one_action(family))
 
     html = client.get("/").text
@@ -66,6 +84,8 @@ def test_dashboard_renders_exposures_and_actions(client, family):
     assert "Spokeo" in html
     assert "act00001" in html
     assert "drafted" in html
+    assert "verified" in html
+    assert "Prioritize Spokeo first." in html
 
 
 def test_dashboard_labels_the_evidence_source(client):
@@ -75,7 +95,39 @@ def test_dashboard_labels_the_evidence_source(client):
     assert "enforcement" in html.lower()
 
 
-# ── Scan ───────────────────────────────────────────────────────────────
+# ── Scan consent & rate limit ──────────────────────────────────────────
+
+
+def test_scan_requires_explicit_consent(client):
+    missing = client.post("/api/scan")
+    assert missing.status_code == 400
+    assert "consent" in missing.json()["detail"].lower()
+
+    declined = client.post("/api/scan", json={"consent": False})
+    assert declined.status_code == 400
+    assert "consent" in declined.json()["detail"].lower()
+
+
+def test_scan_rejects_arbitrary_personal_data_payloads(client):
+    response = client.post(
+        "/api/scan",
+        json={"consent": True, "full_name": "Real Person"},
+    )
+    assert response.status_code == 422
+
+
+def test_scan_enforces_hourly_rate_limit(client, family, monkeypatch):
+    monkeypatch.setenv("HAVEN_SCAN_RATE_LIMIT", "2")
+    monkeypatch.setattr(
+        "haven.api.run_pipeline", lambda fam, **kwargs: _state_with_one_action(fam)
+    )
+
+    assert client.post("/api/scan", json={"consent": True}).status_code == 200
+    assert client.post("/api/scan", json={"consent": True}).status_code == 200
+
+    limited = client.post("/api/scan", json={"consent": True})
+    assert limited.status_code == 429
+    assert "Retry-After" in limited.headers
 
 
 def test_scan_reports_pipeline_counts(client, family, monkeypatch):
@@ -83,16 +135,22 @@ def test_scan_reports_pipeline_counts(client, family, monkeypatch):
         "haven.api.run_pipeline", lambda fam, **kwargs: _state_with_one_action(fam)
     )
 
-    response = client.post("/api/scan")
+    response = client.post("/api/scan", json={"consent": True})
 
     assert response.status_code == 200
     assert response.json() == {
         "status": "complete",
+        "provider_mode": "live",
+        "inventory_count": 1,
         "exposures_found": 1,
+        "verified_matches": 1,
+        "candidate_matches": 0,
         "procedures_extracted": 1,
         "drafts_created": 1,
     }
+    assert len(client.get("/api/inventory").json()) == 1
     assert len(client.get("/api/exposures").json()) == 1
+    assert client.get("/api/strategy").json() == {"strategy": "Prioritize Spokeo first."}
 
 
 def test_scan_failure_surfaces_as_500(client, monkeypatch):
@@ -101,7 +159,7 @@ def test_scan_failure_surfaces_as_500(client, monkeypatch):
 
     monkeypatch.setattr("haven.api.run_pipeline", boom)
 
-    response = client.post("/api/scan")
+    response = client.post("/api/scan", json={"consent": True})
 
     assert response.status_code == 500
     assert "NEBIUS_API_KEY" in response.json()["detail"]
@@ -114,7 +172,7 @@ def test_scan_keeps_previous_state_on_failure(client, family, monkeypatch):
         lambda fam, **kwargs: (_ for _ in ()).throw(RuntimeError("upstream 500")),
     )
 
-    assert client.post("/api/scan").status_code == 500
+    assert client.post("/api/scan", json={"consent": True}).status_code == 500
     assert len(client.get("/api/exposures").json()) == 1
 
 
@@ -185,12 +243,15 @@ def test_evidence_endpoint_is_empty_without_a_log(client, monkeypatch):
     body = client.get("/api/evidence").json()
 
     assert body["source"] == "enforcement_layer"
+    assert body["evidence_status"] == "unavailable"
     assert "not agent-reported" in body["note"]
     assert body["summary"] == {"total_allowed": 0, "total_denied": 0, "destinations": []}
     assert body["records"] == []
 
 
-def test_evidence_endpoint_reads_the_audit_log(client, tmp_path, monkeypatch):
+def test_evidence_endpoint_reads_the_audit_log_and_distinguishes_real_vs_simulated(
+    client, tmp_path, monkeypatch
+):
     log = tmp_path / "egress.jsonl"
     log.write_text(
         "\n".join(
@@ -211,9 +272,16 @@ def test_evidence_endpoint_reads_the_audit_log(client, tmp_path, monkeypatch):
 
     body = client.get("/api/evidence").json()
 
+    assert body["evidence_status"] == "real"
     assert body["summary"]["total_allowed"] == 2
     assert body["summary"]["total_denied"] == 1
     assert len(body["records"]) == 2
+
+    log.write_text(
+        json.dumps({"destination_host": "api.tavily.com", "simulated": True}),
+        encoding="utf-8",
+    )
+    assert client.get("/api/evidence").json()["evidence_status"] == "simulated"
 
 
 # ── Tier usage ─────────────────────────────────────────────────────────
@@ -235,7 +303,7 @@ def test_tier_usage_aggregates_by_tier(client):
                 input_tokens=100,
                 output_tokens=20,
                 latency_ms=10.0,
-                purpose="classify_search_result",
+                purpose="classify_inventory_result",
                 timestamp=now,
             ),
             TierUsage(
@@ -244,7 +312,7 @@ def test_tier_usage_aggregates_by_tier(client):
                 input_tokens=300,
                 output_tokens=40,
                 latency_ms=20.0,
-                purpose="classify_search_result",
+                purpose="classify_inventory_result",
                 timestamp=now,
             ),
             TierUsage(

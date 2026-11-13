@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 from openai import OpenAI
 from tavily import TavilyClient
 
+SRC = Path(__file__).resolve().parent.parent / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
-MODEL = "nvidia/nemotron-3-super-120b-a12b"
-TOKEN_FACTORY_BASE_URL = "https://api.tokenfactory.nebius.com/v1/"
+from haven import llm, privacy  # noqa: E402
+
+
+MODEL = llm.model_for("super")
 TAVILY_QUERY = "data broker opt-out procedure"
 
 
@@ -34,24 +40,30 @@ def main() -> int:
         )
         return 2
 
-    llm = OpenAI(
-        base_url=TOKEN_FACTORY_BASE_URL,
+    endpoint = llm.base_url()
+    system_prompt = (
+        "This is a provider connectivity check. "
+        "Do not request or infer personal information."
+    )
+    user_prompt = (
+        "Reply with a short confirmation that the Haven demo model connection works."
+    )
+    privacy.check("token_factory", system_prompt, user_prompt)
+    privacy.check("tavily.search", TAVILY_QUERY)
+
+    client = OpenAI(
+        base_url=endpoint,
         api_key=nebius_api_key,
     )
-    completion = llm.chat.completions.create(
+    completion = client.chat.completions.create(
         model=MODEL,
         messages=[
-            {
-                "role": "system",
-                "content": "This is a provider connectivity check. Do not request or infer personal information.",
-            },
-            {
-                "role": "user",
-                "content": "Reply with a short confirmation that the Haven demo model connection works.",
-            },
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
         ],
     )
 
+    print(f"Endpoint: {endpoint}")
     print(f"Nebius Token Factory ({completion.model})")
     print(completion.choices[0].message.content or "(empty response)")
     if completion.usage is not None:

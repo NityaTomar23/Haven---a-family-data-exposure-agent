@@ -27,7 +27,7 @@ import uvicorn  # noqa: E402  (import after the sys.path fix)
 
 def main() -> int:
     host = os.environ.get("HAVEN_HOST", "127.0.0.1")
-    port = int(os.environ.get("HAVEN_PORT", "8000"))
+    port = int(os.environ.get("HAVEN_PORT") or os.environ.get("PORT") or "8000")
 
     # Reload is intentionally off: the reloader re-executes in a fresh
     # interpreter that would not inherit the sys.path entry above.
