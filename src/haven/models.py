@@ -1,9 +1,8 @@
-"""Pydantic data models for the Haven pipeline.
+"""Pydantic data models for the Haven pipeline and local encrypted vault.
 
-Shapes follow §5 of the project brief; the dashboard depends on them.
 Sensitivity labels are metadata, not an enforcement control: *no* family
-identifier -- low or high -- may be sent to a provider. That rule is enforced
-by ``haven.privacy``, not by these labels.
+identifier -- low or high -- may ever be sent to an LLM or search provider.
+That rule is enforced by ``haven.boundary`` and ``haven.privacy``.
 """
 
 from __future__ import annotations
@@ -15,10 +14,21 @@ from pydantic import BaseModel, Field
 
 BrokerType = Literal["people_search", "data_broker", "social", "other"]
 MatchStatus = Literal["candidate", "verified", "rejected"]
+OptOutMethod = Literal["web_form", "email", "postal", "phone", "account", "manual_only"]
+ActionStatus = Literal[
+    "drafted",
+    "approved",
+    "sent",
+    "confirmed_removed",
+    "re_listed",
+    "follow_up_due",
+    "rejected",
+    "pending",
+]
 
 
 class Identifier(BaseModel):
-    """A single piece of personal information, used for LOCAL matching only."""
+    """A single piece of personal information, used for LOCAL matching and rendering only."""
 
     kind: Literal["name", "phone", "email", "address", "city_state", "alias"]
     value: str
@@ -41,32 +51,42 @@ class Exposure(BaseModel):
 
 
 class BrokerInventoryEntry(BaseModel):
-    """A broker found by generic, identifier-free research."""
+    """A broker discovered from the local registry or identifier-free research."""
 
     name: str
     broker_type: BrokerType
-    source_url: str  # the generic page that named the broker
+    source_url: str  # the generic page or registry entry that named the broker
     confidence: float = Field(ge=0, le=1)
-    coverage: Literal["local_fixture", "manual_only"]
-    # manual_only: checking this site would require submitting a family
-    # identifier, which the privacy guarantee forbids. The parent checks it.
+    coverage: Literal["local_fixture", "manual_only", "registry"]
 
 
 class RemovalProcedure(BaseModel):
     """How to request removal from a specific site."""
 
     exposure_id: str
-    method: Literal["web_form", "email", "postal", "phone", "manual_only"]
+    method: OptOutMethod
     action_url: str | None = None
+    optout_email: str | None = None
     required_evidence: list[str]
+    required_fields: list[str] = Field(default_factory=list)
+    verification_step: str | None = None
     statutory_deadline_days: int | None = None
     deadline_source_url: str | None = None
     deadline_verified_at: datetime | None = None
     service_target_days: int | None = None  # a site's own promise, not law
+    re_list_days: int = 30
     jurisdiction: str | None = None
     steps: list[str]
     source_url: str  # where the procedure was read from
     retrieved_at: datetime | None = None
+
+
+class DiffHunk(BaseModel):
+    """A single placeholder substitution shown on the local diff review screen."""
+
+    placeholder: str
+    replacement: str
+    field_kind: str
 
 
 class RemovalAction(BaseModel):
@@ -77,17 +97,23 @@ class RemovalAction(BaseModel):
     exposure_id: str
     procedure: RemovalProcedure
     draft: str  # contains placeholders; personal details are filled locally
-    status: Literal[
-        "drafted",
-        "approved",
-        "sent",
-        "confirmed_removed",
-        "rejected",
-        "pending",
-    ]
-    drafted_model: str  # which Nemotron tier produced it
+    status: ActionStatus
+    drafted_model: str
     created_at: datetime
     updated_at: datetime
+    rendered_draft: str | None = None
+    diff_hunks: list[DiffHunk] = Field(default_factory=list)
+    mailto_uri: str | None = None
+    form_fields: dict[str, str] = Field(default_factory=dict)
+    sent_at: datetime | None = None
+    confirmed_at: datetime | None = None
+    due_at: datetime | None = None
+    rescan_30d_at: datetime | None = None
+    rescan_60d_at: datetime | None = None
+    rescan_90d_at: datetime | None = None
+    requires_parental_consent: bool = False
+    parental_consent_confirmed: bool = False
+    notes: str = ""
 
 
 class EgressRecord(BaseModel):
@@ -120,17 +146,24 @@ class TierUsage(BaseModel):
 
 
 class FamilyMember(BaseModel):
-    """A member of the synthetic family used for demos."""
+    """A member of a family stored in the local vault or synthetic demo."""
 
     first_name: str
     last_name: str
     role: Literal["parent", "child"]
-    age: int
+    age: int = Field(ge=0, le=130)
     identifiers: list[Identifier]
+    member_id: str = ""
+    parental_consent_confirmed: bool = False
+
+    @property
+    def is_minor(self) -> bool:
+        """Return True when the member is a minor (role == 'child' or age < 18)."""
+        return self.role == "child" or self.age < 18
 
 
 class Family(BaseModel):
-    """A complete synthetic family."""
+    """A complete family profile."""
 
     family_id: str
     members: list[FamilyMember]
@@ -139,17 +172,33 @@ class Family(BaseModel):
     state: str
     zip_code: str
     created_at: datetime
+    jurisdiction: str = "CCPA"
+    is_synthetic: bool = False
+
+
+class BrokerSearchLink(BaseModel):
+    """A locally generated search deep link for a data broker."""
+
+    broker_slug: str
+    broker_name: str
+    member_name: str
+    member_index: int
+    is_minor: bool = False
+    search_url: str
+    optout_url: str
+    optout_method: OptOutMethod
 
 
 class PipelineState(BaseModel):
     """Top-level state for the Haven pipeline — drives the dashboard."""
 
     family: Family
-    inventory: list[BrokerInventoryEntry] = []
-    exposures: list[Exposure] = []
-    procedures: list[RemovalProcedure] = []
-    actions: list[RemovalAction] = []
-    egress_log: list[EgressRecord] = []
-    tier_usage: list[TierUsage] = []
+    inventory: list[BrokerInventoryEntry] = Field(default_factory=list)
+    exposures: list[Exposure] = Field(default_factory=list)
+    procedures: list[RemovalProcedure] = Field(default_factory=list)
+    actions: list[RemovalAction] = Field(default_factory=list)
+    egress_log: list[EgressRecord] = Field(default_factory=list)
+    tier_usage: list[TierUsage] = Field(default_factory=list)
+    search_links: list[BrokerSearchLink] = Field(default_factory=list)
     strategy: str | None = None  # ultra-tier multi-site plan, identifier-free
     provider_mode: Literal["live", "offline"] = "live"

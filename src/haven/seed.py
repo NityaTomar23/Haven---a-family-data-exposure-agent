@@ -7,13 +7,8 @@ The demo family is deterministic and unmistakably fictional:
 * phone numbers use the reserved ``555-01xx`` fictional range;
 * the ZIP code ``00000`` is not assigned to any real place.
 
-The MVP scope is adults only. Children's names, schools and activities are
-deliberately absent: the model can describe a ``child`` role for a future,
-separately reviewed mode, but the demo never creates one.
-
 Identifiers here are used for LOCAL matching only. No identifier -- whatever
-its sensitivity label -- may be sent to Tavily, Token Factory or any other
-third party; ``haven.privacy`` enforces that.
+its sensitivity label -- may be sent to any search API or LLM provider.
 """
 
 from __future__ import annotations
@@ -39,6 +34,7 @@ def generate_family(*, seed: int = 42) -> Family:
     city_state = f"{CITY}, {STATE}"
 
     avery = FamilyMember(
+        member_id="mem_avery",
         first_name="Avery",
         last_name=LAST_NAME,
         role="parent",
@@ -57,6 +53,7 @@ def generate_family(*, seed: int = 42) -> Family:
     )
 
     jordan = FamilyMember(
+        member_id="mem_jordan",
         first_name="Jordan",
         last_name=LAST_NAME,
         role="parent",
@@ -77,6 +74,8 @@ def generate_family(*, seed: int = 42) -> Family:
         city=CITY,
         state=STATE,
         zip_code=ZIP_CODE,
+        jurisdiction="CCPA",
+        is_synthetic=True,
         created_at=datetime.now(timezone.utc),
     )
 
@@ -90,25 +89,21 @@ def get_all_identifiers(family: Family) -> list[Identifier]:
 
 
 def get_search_identifiers(family: Family) -> list[Identifier]:
-    """Low-sensitivity identifiers, for LOCAL display and matching only.
-
-    Kept for API compatibility. Since the identifier-free redesign no
-    identifier is ever used to build an outbound query; the name is historical.
-    """
+    """Low-sensitivity identifiers, for LOCAL display and matching only."""
     return [i for i in get_all_identifiers(family) if i.sensitivity == "low"]
 
 
 def redact_high_sensitivity(family: Family) -> Family:
     """Return a deep copy with every high-sensitivity identifier value hidden.
 
-    The dashboard redacts these values, and the JSON API should not hand out
-    what the UI it feeds refuses to show. The hosted demo URL is public, so
-    the default is the redacted view even though the seed data is synthetic.
+    Minors (role == 'child' or age < 18) have ALL their identifiers redacted by
+    default in public/API views for conservative minor protection.
     """
     clone = family.model_copy(deep=True)
     clone.address = "[REDACTED]"
     for member in clone.members:
+        is_minor = member.is_minor
         for identifier in member.identifiers:
-            if identifier.sensitivity == "high":
+            if identifier.sensitivity == "high" or is_minor:
                 identifier.value = "[REDACTED]"
     return clone
